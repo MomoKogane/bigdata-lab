@@ -6,15 +6,15 @@ from pyecharts import options as opts
 from pyecharts.charts import Map
 import numpy as np
 
-# È·±£ÖĞÎÄÕı³£ÏÔÊ¾
+# ç¡®ä¿ä¸­æ–‡æ­£å¸¸æ˜¾ç¤º
 plt.rcParams["font.family"] = ["SimHei", "WenQuanYi Micro Hei", "Heiti TC"]
-plt.rcParams["axes.unicode_minus"] = False  # ½â¾ö¸ººÅÏÔÊ¾ÎÊÌâ
+plt.rcParams["axes.unicode_minus"] = False  # è§£å†³è´Ÿå·æ˜¾ç¤ºé—®é¢˜
 
 
-### 1. Á¬½ÓMySQLÊı¾İ¿â²¢»ñÈ¡Êı¾İ
+### 1. è¿æ¥MySQLæ•°æ®åº“å¹¶è·å–æ•°æ®
 def get_data_from_mysql():
-    """´ÓMySQL»ñÈ¡ÓÃ»§ĞĞÎªÊı¾İ"""
-    print("ÕıÔÚÁ¬½ÓÊı¾İ¿â²¢»ñÈ¡Êı¾İ...")
+    """ä»MySQLè·å–ç”¨æˆ·è¡Œä¸ºæ•°æ®"""
+    print("æ­£åœ¨è¿æ¥æ•°æ®åº“å¹¶è·å–æ•°æ®...")
     try:
         conn = pymysql.connect(
             host='127.0.0.1',
@@ -26,86 +26,86 @@ def get_data_from_mysql():
         query = "SELECT * FROM user_action"
         data = pd.read_sql(query, conn)
         conn.close()
-        print(f"³É¹¦»ñÈ¡Êı¾İ£¬Êı¾İĞÎ×´: {data.shape}")
+        print(f"æˆåŠŸè·å–æ•°æ®ï¼Œæ•°æ®å½¢çŠ¶: {data.shape}")
         return data
     except Exception as e:
-        print(f"Êı¾İ¿âÁ¬½ÓÊ§°Ü: {e}")
+        print(f"æ•°æ®åº“è¿æ¥å¤±è´¥: {e}")
         return None
 
 
-### 2. Êı¾İÔ¤´¦Àíº¯Êı
+### 2. æ•°æ®é¢„å¤„ç†å‡½æ•°
 def preprocess_data(data):
-    """×ª»»Êı¾İÀàĞÍ¡¢ÌáÈ¡ÔÂ·İ²¢´¦Àí¿ÕÖµ"""
+    """è½¬æ¢æ•°æ®ç±»å‹ã€æå–æœˆä»½å¹¶å¤„ç†ç©ºå€¼"""
     if data is not None:
-        print("ÕıÔÚ½øĞĞÊı¾İÔ¤´¦Àí...")
-        # ¼ì²é²¢´¦Àí¿ÕÖµ
+        print("æ­£åœ¨è¿›è¡Œæ•°æ®é¢„å¤„ç†...")
+        # æ£€æŸ¥å¹¶å¤„ç†ç©ºå€¼
         if data.isnull().sum().sum() > 0:
             null_counts = data.isnull().sum()
-            print(f"Êı¾İ´æÔÚ¿ÕÖµ£¬¸÷ÁĞ¿ÕÖµÊıÁ¿:\n{null_counts[null_counts > 0]}")
+            print(f"æ•°æ®å­˜åœ¨ç©ºå€¼ï¼Œå„åˆ—ç©ºå€¼æ•°é‡:\n{null_counts[null_counts > 0]}")
             data = data.dropna()
-            print(f"ÒÑÒÆ³ı¿ÕÖµ£¬Ê£ÓàÊı¾İĞÎ×´: {data.shape}")
+            print(f"å·²ç§»é™¤ç©ºå€¼ï¼Œå‰©ä½™æ•°æ®å½¢çŠ¶: {data.shape}")
         
-        # ×ª»»ĞĞÎªÀàĞÍÎªÊıÖµĞÍ
+        # è½¬æ¢è¡Œä¸ºç±»å‹ä¸ºæ•°å€¼å‹
         data['behavior_type_num'] = data['behavior_type'].astype(int)
-        # ´ÓÈÕÆÚÖĞÌáÈ¡ÔÂ·İ
+        # ä»æ—¥æœŸä¸­æå–æœˆä»½
         data['month'] = data['visit_date'].str[5:7]
-        # ÌáÈ¡ÈÕÆÚÖĞµÄÈÕ
+        # æå–æ—¥æœŸä¸­çš„æ—¥
         data['day'] = data['visit_date'].str[8:10]
-        print("Êı¾İÔ¤´¦ÀíÍê³É")
+        print("æ•°æ®é¢„å¤„ç†å®Œæˆ")
         return data
-    print("Êı¾İÎª¿Õ£¬ÎŞ·¨½øĞĞÔ¤´¦Àí")
+    print("æ•°æ®ä¸ºç©ºï¼Œæ— æ³•è¿›è¡Œé¢„å¤„ç†")
     return None
 
 
-### 3. Ïû·ÑÕßĞĞÎª·Ö²¼¿ÉÊÓ»¯£¨Ö±·½Í¼£©
+### 3. æ¶ˆè´¹è€…è¡Œä¸ºåˆ†å¸ƒå¯è§†åŒ–ï¼ˆç›´æ–¹å›¾ï¼‰
 def plot_behavior_distribution(data):
-    """Ê¹ÓÃmatplotlib»æÖÆĞĞÎªÀàĞÍ·Ö²¼Ö±·½Í¼"""
+    """ä½¿ç”¨matplotlibç»˜åˆ¶è¡Œä¸ºç±»å‹åˆ†å¸ƒç›´æ–¹å›¾"""
     if data is not None:
-        print("ÕıÔÚ»æÖÆÏû·ÑÕßĞĞÎªÀàĞÍ·Ö²¼Ö±·½Í¼...")
+        print("æ­£åœ¨ç»˜åˆ¶æ¶ˆè´¹è€…è¡Œä¸ºç±»å‹åˆ†å¸ƒç›´æ–¹å›¾...")
         plt.figure(figsize=(10, 6))
         sns.histplot(data['behavior_type_num'], kde=False, bins=4, color='lightblue')
-        plt.title('Ïû·ÑÕßĞĞÎªÀàĞÍ·Ö²¼')
-        plt.xlabel('ĞĞÎªÀàĞÍ£¨1=ä¯ÀÀ£¬4=¹ºÂò£©')
-        plt.ylabel('ÆµÊı')
+        plt.title('æ¶ˆè´¹è€…è¡Œä¸ºç±»å‹åˆ†å¸ƒ')
+        plt.xlabel('è¡Œä¸ºç±»å‹ï¼ˆ1=æµè§ˆï¼Œ4=è´­ä¹°ï¼‰')
+        plt.ylabel('é¢‘æ•°')
         plt.xticks([1, 2, 3, 4])
         plt.grid(True, alpha=0.3)
         plt.savefig('behavior_distribution.png', dpi=300)
         plt.show()
-        print("Ïû·ÑÕßĞĞÎªÀàĞÍ·Ö²¼Ö±·½Í¼»æÖÆÍê³É")
+        print("æ¶ˆè´¹è€…è¡Œä¸ºç±»å‹åˆ†å¸ƒç›´æ–¹å›¾ç»˜åˆ¶å®Œæˆ")
 
 
-### 4. ¹ºÂòÁ¿Ç°Ê®µÄÉÌÆ··ÖÀà£¨Öù×´Í¼£©
+### 4. è´­ä¹°é‡å‰åçš„å•†å“åˆ†ç±»ï¼ˆæŸ±çŠ¶å›¾ï¼‰
 def plot_top_purchased_categories(data):
-    """Ê¹ÓÃseaborn»æÖÆ¹ºÂòÁ¿Ç°Ê®µÄÉÌÆ··ÖÀà"""
+    """ä½¿ç”¨seabornç»˜åˆ¶è´­ä¹°é‡å‰åçš„å•†å“åˆ†ç±»"""
     if data is not None:
-        print("ÕıÔÚ·ÖÎö²¢»æÖÆ¹ºÂòÁ¿Ç°Ê®µÄÉÌÆ··ÖÀà...")
-        # É¸Ñ¡¹ºÂòĞĞÎª£¨ĞĞÎªÀàĞÍ=4£©
+        print("æ­£åœ¨åˆ†æå¹¶ç»˜åˆ¶è´­ä¹°é‡å‰åçš„å•†å“åˆ†ç±»...")
+        # ç­›é€‰è´­ä¹°è¡Œä¸ºï¼ˆè¡Œä¸ºç±»å‹=4ï¼‰
         buy_data = data[data['behavior_type_num'] == 4].copy()
-        # Í³¼ÆÉÌÆ··ÖÀà¹ºÂò´ÎÊı
+        # ç»Ÿè®¡å•†å“åˆ†ç±»è´­ä¹°æ¬¡æ•°
         category_count = buy_data['item_category'].value_counts().nlargest(10)
         
         plt.figure(figsize=(12, 7))
         sns.barplot(x=category_count.index, y=category_count.values, color='green')
-        plt.title('¹ºÂòÁ¿Ç°Ê®µÄÉÌÆ··ÖÀà')
-        plt.xlabel('ÉÌÆ··ÖÀàID')
-        plt.ylabel('¹ºÂò´ÎÊı')
+        plt.title('è´­ä¹°é‡å‰åçš„å•†å“åˆ†ç±»')
+        plt.xlabel('å•†å“åˆ†ç±»ID')
+        plt.ylabel('è´­ä¹°æ¬¡æ•°')
         plt.xticks(rotation=45, ha='right')
         plt.grid(True, alpha=0.3)
         
-        # ÎªÃ¿¸öÖù×ÓÌí¼ÓÊıÖµ±êÇ©
+        # ä¸ºæ¯ä¸ªæŸ±å­æ·»åŠ æ•°å€¼æ ‡ç­¾
         for i, v in enumerate(category_count.values):
             plt.text(i, v + 100, f'{v}', ha='center', fontsize=9)
         
         plt.savefig('top_categories.png', dpi=300)
         plt.show()
-        print("¹ºÂòÁ¿Ç°Ê®µÄÉÌÆ··ÖÀàÖù×´Í¼»æÖÆÍê³É")
+        print("è´­ä¹°é‡å‰åçš„å•†å“åˆ†ç±»æŸ±çŠ¶å›¾ç»˜åˆ¶å®Œæˆ")
 
 
-### 5. °´ÔÂ·ÖÎö¹ºÂòĞĞÎª£¨·ÖÃæÖ±·½Í¼£©
+### 5. æŒ‰æœˆåˆ†æè´­ä¹°è¡Œä¸ºï¼ˆåˆ†é¢ç›´æ–¹å›¾ï¼‰
 def plot_monthly_behavior(data):
-    """Ê¹ÓÃseaborn·ÖÃæÖ±·½Í¼·ÖÎö¸÷ÔÂĞĞÎª·Ö²¼"""
+    """ä½¿ç”¨seabornåˆ†é¢ç›´æ–¹å›¾åˆ†æå„æœˆè¡Œä¸ºåˆ†å¸ƒ"""
     if data is not None:
-        print("ÕıÔÚ»æÖÆ¸÷ÔÂ·İÏû·ÑÕßĞĞÎª·Ö²¼·ÖÃæÖ±·½Í¼...")
+        print("æ­£åœ¨ç»˜åˆ¶å„æœˆä»½æ¶ˆè´¹è€…è¡Œä¸ºåˆ†å¸ƒåˆ†é¢ç›´æ–¹å›¾...")
         plt.figure(figsize=(14, 8))
         sns.histplot(
             data=data,
@@ -114,34 +114,34 @@ def plot_monthly_behavior(data):
             bins=4,
             kde=False,
             color='lightgreen',
-            col_wrap=3  # Ã¿ĞĞÏÔÊ¾3¸ö×ÓÍ¼
+            col_wrap=3  # æ¯è¡Œæ˜¾ç¤º3ä¸ªå­å›¾
         )
-        plt.suptitle('¸÷ÔÂ·İÏû·ÑÕßĞĞÎª·Ö²¼', y=0.95, fontsize=14)
+        plt.suptitle('å„æœˆä»½æ¶ˆè´¹è€…è¡Œä¸ºåˆ†å¸ƒ', y=0.95, fontsize=14)
         plt.tight_layout()
         plt.savefig('monthly_behavior.png', dpi=300)
         plt.show()
-        print("¸÷ÔÂ·İÏû·ÑÕßĞĞÎª·Ö²¼·ÖÃæÖ±·½Í¼»æÖÆÍê³É")
+        print("å„æœˆä»½æ¶ˆè´¹è€…è¡Œä¸ºåˆ†å¸ƒåˆ†é¢ç›´æ–¹å›¾ç»˜åˆ¶å®Œæˆ")
 
 
-### 6. ¸÷Ê¡·İ¹ºÂòÓûÍû·ÖÎö£¨µØÍ¼¿ÉÊÓ»¯£©
+### 6. å„çœä»½è´­ä¹°æ¬²æœ›åˆ†æï¼ˆåœ°å›¾å¯è§†åŒ–ï¼‰
 def plot_province_purchase(data):
-    """Ê¹ÓÃpyecharts»æÖÆ¸÷Ê¡·İ¹ºÂòÁ¿µØÍ¼"""
+    """ä½¿ç”¨pyechartsç»˜åˆ¶å„çœä»½è´­ä¹°é‡åœ°å›¾"""
     if data is not None:
-        print("ÕıÔÚ·ÖÎö¸÷Ê¡·İ¹ºÂòÁ¿²¢»æÖÆµØÍ¼...")
-        # ÌáÈ¡¹ºÂòÊı¾İ²¢Í³¼ÆÊ¡·İ¹ºÂòÁ¿
+        print("æ­£åœ¨åˆ†æå„çœä»½è´­ä¹°é‡å¹¶ç»˜åˆ¶åœ°å›¾...")
+        # æå–è´­ä¹°æ•°æ®å¹¶ç»Ÿè®¡çœä»½è´­ä¹°é‡
         buy_data = data[data['behavior_type_num'] == 4].copy()
         province_count = buy_data['province'].value_counts().reset_index()
         province_count.columns = ['province', 'count']
         
-        # ×ª»»ÎªpyechartsĞèÒªµÄÊı¾İ¸ñÊ½
+        # è½¬æ¢ä¸ºpyechartséœ€è¦çš„æ•°æ®æ ¼å¼
         map_data = [list(z) for z in zip(province_count['province'].tolist(), province_count['count'].tolist())]
         
-        # ´´½¨µØÍ¼
+        # åˆ›å»ºåœ°å›¾
         (
             Map()
-            .add("¹ºÂòÁ¿", map_data, "china", is_map_symbol_show=False)
+            .add("è´­ä¹°é‡", map_data, "china", is_map_symbol_show=False)
             .set_global_opts(
-                title_opts=opts.TitleOpts(title="¸÷Ê¡·İ¹ºÂòÁ¿·Ö²¼"),
+                title_opts=opts.TitleOpts(title="å„çœä»½è´­ä¹°é‡åˆ†å¸ƒ"),
                 visualmap_opts=opts.VisualMapOpts(
                     min_=province_count['count'].min(),
                     max_=province_count['count'].max(),
@@ -154,76 +154,76 @@ def plot_province_purchase(data):
             )
             .render("province_purchase_map.html")
         )
-        print("¸÷Ê¡·İ¹ºÂòÁ¿µØÍ¼»æÖÆÍê³É£¬½á¹ûÒÑ±£´æÎªHTMLÎÄ¼ş")
+        print("å„çœä»½è´­ä¹°é‡åœ°å›¾ç»˜åˆ¶å®Œæˆï¼Œç»“æœå·²ä¿å­˜ä¸ºHTMLæ–‡ä»¶")
 
 
-### 7. Ã¿ÈÕÓÃ»§ĞĞÎªÇ÷ÊÆ·ÖÎö£¨ÕÛÏßÍ¼£©
+### 7. æ¯æ—¥ç”¨æˆ·è¡Œä¸ºè¶‹åŠ¿åˆ†æï¼ˆæŠ˜çº¿å›¾ï¼‰
 def plot_daily_behavior_trend(data):
-    """Ê¹ÓÃmatplotlib»æÖÆÃ¿ÈÕ¸÷ÀàĞĞÎªÇ÷ÊÆ"""
+    """ä½¿ç”¨matplotlibç»˜åˆ¶æ¯æ—¥å„ç±»è¡Œä¸ºè¶‹åŠ¿"""
     if data is not None:
-        print("ÕıÔÚ·ÖÎöÃ¿ÈÕÓÃ»§ĞĞÎªÇ÷ÊÆ...")
-        # °´ÈÕÆÚºÍĞĞÎªÀàĞÍ·Ö×éÍ³¼Æ
+        print("æ­£åœ¨åˆ†ææ¯æ—¥ç”¨æˆ·è¡Œä¸ºè¶‹åŠ¿...")
+        # æŒ‰æ—¥æœŸå’Œè¡Œä¸ºç±»å‹åˆ†ç»„ç»Ÿè®¡
         daily_trend = data.groupby(['day', 'behavior_type_num'])['uid'].nunique().reset_index()
         daily_trend = daily_trend.pivot(index='day', columns='behavior_type_num', values='uid')
         
         plt.figure(figsize=(14, 7))
         for behavior in daily_trend.columns:
-            plt.plot(daily_trend.index, daily_trend[behavior], marker='o', label=f'ĞĞÎªÀàĞÍ{behavior}')
+            plt.plot(daily_trend.index, daily_trend[behavior], marker='o', label=f'è¡Œä¸ºç±»å‹{behavior}')
         
-        plt.title('Ã¿ÈÕÓÃ»§ĞĞÎªÇ÷ÊÆ')
-        plt.xlabel('ÈÕÆÚ')
-        plt.ylabel('ÓÃ»§ÊıÁ¿£¨È¥ÖØuid£©')
-        plt.legend(title='ĞĞÎªÀàĞÍ')
+        plt.title('æ¯æ—¥ç”¨æˆ·è¡Œä¸ºè¶‹åŠ¿')
+        plt.xlabel('æ—¥æœŸ')
+        plt.ylabel('ç”¨æˆ·æ•°é‡ï¼ˆå»é‡uidï¼‰')
+        plt.legend(title='è¡Œä¸ºç±»å‹')
         plt.grid(True, alpha=0.3)
         plt.xticks(rotation=45, ha='right')
         
         plt.savefig('daily_behavior_trend.png', dpi=300)
         plt.show()
-        print("Ã¿ÈÕĞĞÎªÇ÷ÊÆ·ÖÎöÍê³É£¬½á¹ûÒÑ±£´æ")
+        print("æ¯æ—¥è¡Œä¸ºè¶‹åŠ¿åˆ†æå®Œæˆï¼Œç»“æœå·²ä¿å­˜")
 
 
-### 8. ÉÌÆ··ÖÀàÓëĞĞÎªÀàĞÍ¹ØÁª·ÖÎö£¨ÈÈÁ¦Í¼£©
+### 8. å•†å“åˆ†ç±»ä¸è¡Œä¸ºç±»å‹å…³è”åˆ†æï¼ˆçƒ­åŠ›å›¾ï¼‰
 def plot_category_behavior_correlation(data):
-    """Ê¹ÓÃseaborn»æÖÆÉÌÆ··ÖÀàÓëĞĞÎªÀàĞÍ¹ØÁªÈÈÁ¦Í¼"""
+    """ä½¿ç”¨seabornç»˜åˆ¶å•†å“åˆ†ç±»ä¸è¡Œä¸ºç±»å‹å…³è”çƒ­åŠ›å›¾"""
     if data is not None:
-        print("ÕıÔÚ·ÖÎöÉÌÆ··ÖÀàÓëĞĞÎªÀàĞÍ¹ØÁª...")
-        # Í³¼ÆÃ¿¸öÉÌÆ··ÖÀàÏÂ¸÷ĞĞÎªÀàĞÍµÄÊıÁ¿
+        print("æ­£åœ¨åˆ†æå•†å“åˆ†ç±»ä¸è¡Œä¸ºç±»å‹å…³è”...")
+        # ç»Ÿè®¡æ¯ä¸ªå•†å“åˆ†ç±»ä¸‹å„è¡Œä¸ºç±»å‹çš„æ•°é‡
         category_behavior = data.groupby(['item_category', 'behavior_type_num'])['uid'].count().reset_index()
-        # ×ª»»Îª½»²æ±í
+        # è½¬æ¢ä¸ºäº¤å‰è¡¨
         category_behavior_pivot = category_behavior.pivot(index='item_category', columns='behavior_type_num', values='uid')
-        # Ìî³ä¿ÉÄÜµÄ¿ÕÖµ
+        # å¡«å……å¯èƒ½çš„ç©ºå€¼
         category_behavior_pivot = category_behavior_pivot.fillna(0)
         
         plt.figure(figsize=(12, 8))
-        sns.heatmap(category_behavior_pivot, annot=True, fmt='g', cmap='YlGnBu', cbar_kws={'label': 'ĞĞÎª´ÎÊı'})
-        plt.title('ÉÌÆ··ÖÀàÓëĞĞÎªÀàĞÍ¹ØÁªÈÈÁ¦Í¼')
-        plt.xlabel('ĞĞÎªÀàĞÍ')
-        plt.ylabel('ÉÌÆ··ÖÀàID')
+        sns.heatmap(category_behavior_pivot, annot=True, fmt='g', cmap='YlGnBu', cbar_kws={'label': 'è¡Œä¸ºæ¬¡æ•°'})
+        plt.title('å•†å“åˆ†ç±»ä¸è¡Œä¸ºç±»å‹å…³è”çƒ­åŠ›å›¾')
+        plt.xlabel('è¡Œä¸ºç±»å‹')
+        plt.ylabel('å•†å“åˆ†ç±»ID')
         
         plt.savefig('category_behavior_heatmap.png', dpi=300)
         plt.show()
-        print("ÉÌÆ··ÖÀàÓëĞĞÎª¹ØÁª·ÖÎöÍê³É£¬½á¹ûÒÑ±£´æ")
+        print("å•†å“åˆ†ç±»ä¸è¡Œä¸ºå…³è”åˆ†æå®Œæˆï¼Œç»“æœå·²ä¿å­˜")
 
 
-### 9. ÓÃ»§Áô´æ·ÖÎö
+### 9. ç”¨æˆ·ç•™å­˜åˆ†æ
 def plot_user_retention(data):
-    """·ÖÎöÓÃ»§Áô´æÇé¿ö²¢¿ÉÊÓ»¯"""
+    """åˆ†æç”¨æˆ·ç•™å­˜æƒ…å†µå¹¶å¯è§†åŒ–"""
     if data is not None:
-        print("ÕıÔÚ½øĞĞÓÃ»§Áô´æ·ÖÎö...")
-        # ¼ÙÉèvisit_dateÎªÓÃ»§Ê×´Î·ÃÎÊÈÕÆÚ£¬Êµ¼ÊÓ¦ÓÃÖĞĞè¸ù¾İÒµÎñ¶¨ÒåÊ×´Î·ÃÎÊ
+        print("æ­£åœ¨è¿›è¡Œç”¨æˆ·ç•™å­˜åˆ†æ...")
+        # å‡è®¾visit_dateä¸ºç”¨æˆ·é¦–æ¬¡è®¿é—®æ—¥æœŸï¼Œå®é™…åº”ç”¨ä¸­éœ€æ ¹æ®ä¸šåŠ¡å®šä¹‰é¦–æ¬¡è®¿é—®
         data['first_visit'] = data.groupby('uid')['visit_date'].transform('min')
-        # ¼ÆËãÓÃ»§Ê×´Î·ÃÎÊÓëºóĞø·ÃÎÊµÄÊ±¼ä²î
+        # è®¡ç®—ç”¨æˆ·é¦–æ¬¡è®¿é—®ä¸åç»­è®¿é—®çš„æ—¶é—´å·®
         data['date_diff'] = pd.to_datetime(data['visit_date']) - pd.to_datetime(data['first_visit'])
         data['date_diff_days'] = data['date_diff'].dt.days
         
-        # °´ÓÃ»§ºÍÊ±¼ä²î·Ö×é£¬Í³¼ÆÁô´æÓÃ»§
+        # æŒ‰ç”¨æˆ·å’Œæ—¶é—´å·®åˆ†ç»„ï¼Œç»Ÿè®¡ç•™å­˜ç”¨æˆ·
         retention_data = data.groupby(['uid', 'date_diff_days'])['visit_date'].count().reset_index()
-        retention_data = retention_data[retention_data['date_diff_days'] <= 30]  # ½ö·ÖÎö30ÌìÄÚÁô´æ
+        retention_data = retention_data[retention_data['date_diff_days'] <= 30]  # ä»…åˆ†æ30å¤©å†…ç•™å­˜
         
-        # ¼ÆËãÁô´æÂÊ
+        # è®¡ç®—ç•™å­˜ç‡
         first_day_users = retention_data[retention_data['date_diff_days'] == 0]['uid'].nunique()
         if first_day_users == 0:
-            print("Ã»ÓĞ×ã¹»µÄÓÃ»§Êı¾İ½øĞĞÁô´æ·ÖÎö")
+            print("æ²¡æœ‰è¶³å¤Ÿçš„ç”¨æˆ·æ•°æ®è¿›è¡Œç•™å­˜åˆ†æ")
             return
         
         retention_rates = retention_data.groupby('date_diff_days')['uid'].nunique() / first_day_users * 100
@@ -231,40 +231,40 @@ def plot_user_retention(data):
         plt.figure(figsize=(12, 6))
         plt.plot(retention_rates.index, retention_rates.values, marker='o', color='red')
         plt.axhline(y=50, color='gray', linestyle='--', alpha=0.5)
-        plt.title('ÓÃ»§30ÌìÁô´æÂÊ')
-        plt.xlabel('Ê×´Î·ÃÎÊºóµÄÌìÊı')
-        plt.ylabel('Áô´æÂÊ (%)')
+        plt.title('ç”¨æˆ·30å¤©ç•™å­˜ç‡')
+        plt.xlabel('é¦–æ¬¡è®¿é—®åçš„å¤©æ•°')
+        plt.ylabel('ç•™å­˜ç‡ (%)')
         plt.grid(True, alpha=0.3)
         
-        # ±ê¼Ç¹Ø¼üÌìÊıµÄÁô´æÂÊ
+        # æ ‡è®°å…³é”®å¤©æ•°çš„ç•™å­˜ç‡
         for day in [1, 7, 14, 30]:
             if day in retention_rates.index:
                 plt.text(day, retention_rates[day] + 2, f'{retention_rates[day]:.1f}%', ha='center')
         
         plt.savefig('user_retention.png', dpi=300)
         plt.show()
-        print("ÓÃ»§Áô´æ·ÖÎöÍê³É£¬½á¹ûÒÑ±£´æ")
+        print("ç”¨æˆ·ç•™å­˜åˆ†æå®Œæˆï¼Œç»“æœå·²ä¿å­˜")
 
 
-### 10. Ö÷º¯Êı£ºÕûºÏËùÓĞÈÎÎñ
+### 10. ä¸»å‡½æ•°ï¼šæ•´åˆæ‰€æœ‰ä»»åŠ¡
 def main():
     print("="*50)
-    print("ÓÃ»§ĞĞÎªÊı¾İ·ÖÎö³ÌĞòÆô¶¯")
+    print("ç”¨æˆ·è¡Œä¸ºæ•°æ®åˆ†æç¨‹åºå¯åŠ¨")
     print("="*50)
     
-    # 1. »ñÈ¡Êı¾İ
+    # 1. è·å–æ•°æ®
     data = get_data_from_mysql()
     if data is None or data.empty:
-        print("Êı¾İ»ñÈ¡Ê§°Ü£¬³ÌĞòÍË³ö")
+        print("æ•°æ®è·å–å¤±è´¥ï¼Œç¨‹åºé€€å‡º")
         return
     
-    # 2. Ô¤´¦ÀíÊı¾İ
+    # 2. é¢„å¤„ç†æ•°æ®
     data = preprocess_data(data)
     if data is None or data.empty:
-        print("Êı¾İÔ¤´¦ÀíºóÎª¿Õ£¬³ÌĞòÍË³ö")
+        print("æ•°æ®é¢„å¤„ç†åä¸ºç©ºï¼Œç¨‹åºé€€å‡º")
         return
     
-    # 3. Ö´ĞĞ¸÷Ïî¿ÉÊÓ»¯ÈÎÎñ
+    # 3. æ‰§è¡Œå„é¡¹å¯è§†åŒ–ä»»åŠ¡
     plot_behavior_distribution(data)
     plot_top_purchased_categories(data)
     plot_monthly_behavior(data)
@@ -274,7 +274,7 @@ def main():
     plot_user_retention(data)
     
     print("="*50)
-    print("ËùÓĞÊı¾İ·ÖÎöÈÎÎñÍê³É£¬½á¹ûÒÑ±£´æ")
+    print("æ‰€æœ‰æ•°æ®åˆ†æä»»åŠ¡å®Œæˆï¼Œç»“æœå·²ä¿å­˜")
     print("="*50)
 
 
