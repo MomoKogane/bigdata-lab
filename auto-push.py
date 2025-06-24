@@ -60,7 +60,7 @@ def main():
     
     # 执行git push
     remote_name = "origin"
-    target_branch = "master"
+    target_branch = "main"
     
     print(f"正在执行 'git push {remote_name} {current_branch}:{target_branch}'...")
     execute_git_command(["git", "push", remote_name, f"{current_branch}:{target_branch}"])
