@@ -11,43 +11,94 @@ import logging
 import os
 import sys
 from datetime import datetime
+import psutil
+import time
+import argparse
+import matplotlib as mpl
 
-# é…ç½®æ—¥å¿—ç³»ç»Ÿ
+# ÅäÖÃÈÕÖ¾ÏµÍ³
 def setup_logging():
-    """é…ç½®æ—¥å¿—è®°å½•ç³»ç»Ÿ"""
+    """ÅäÖÃÈÕÖ¾¼ÇÂ¼ÏµÍ³"""
     log_dir = "logs"
     os.makedirs(log_dir, exist_ok=True)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_filename = os.path.join(log_dir, f"user_behavior_analysis_{timestamp}.log")
     
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_filename),
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
-    return logging.getLogger('user_behavior_analysis')
+    # ´´½¨´øÑÕÉ«µÄ¿ØÖÆÌ¨ÈÕÖ¾¸ñÊ½
+    class ColorFormatter(logging.Formatter):
+        COLORS = {
+            logging.INFO: '\033[92m',  # ÂÌÉ«
+            logging.WARNING: '\033[93m',  # »ÆÉ«
+            logging.ERROR: '\033[91m',  # ºìÉ«
+            logging.CRITICAL: '\033[91m\033[1m'  # ºìÉ«¼Ó´Ö
+        }
+        RESET = '\033[0m'
+        
+        def format(self, record):
+            color = self.COLORS.get(record.levelno, '')
+            message = super().format(record)
+            return f"{color}{message}{self.RESET}" if color else message
+    
+    logger = logging.getLogger('user_behavior_analysis')
+    logger.setLevel(logging.INFO)
+    
+    # ÎÄ¼ş´¦ÀíÆ÷
+    file_handler = logging.FileHandler(log_filename)
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    
+    # ¿ØÖÆÌ¨´¦ÀíÆ÷
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(ColorFormatter('%(asctime)s - %(levelname)s - %(message)s'))
+    
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    
+    return logger
 
 logger = setup_logging()
 
-# ç¡®ä¿ä¸­æ–‡æ­£å¸¸æ˜¾ç¤º
+# È·±£ÖĞÎÄÕı³£ÏÔÊ¾ (Ubuntu 18.04¼æÈİ)
 try:
-    plt.rcParams["font.family"] = ["SimHei", "WenQuanYi Micro Hei", "Heiti TC"]
+    # ³¢ÊÔ¶àÖÖÖĞÎÄ×ÖÌå·½°¸
+    font_options = [
+        "SimHei", 
+        "WenQuanYi Micro Hei", 
+        "DejaVu Sans", 
+        "Droid Sans Fallback",
+        "Noto Sans CJK SC",
+        "sans-serif"
+    ]
+    
+    # ¼ì²é¿ÉÓÃ×ÖÌå
+    available_fonts = [f.name for f in mpl.font_manager.fontManager.ttflist]
+    logger.info(f"¿ÉÓÃ×ÖÌå: {', '.join(available_fonts[:5])}...")
+    
+    # ÉèÖÃÊ×Ñ¡×ÖÌå
+    for font in font_options:
+        if any(f.lower() == font.lower() for f in available_fonts):
+            plt.rcParams["font.family"] = font
+            logger.info(f"Ê¹ÓÃ×ÖÌå: {font}")
+            break
+    else:
+        logger.warning("Î´ÕÒµ½ºÏÊÊµÄÖĞÎÄ×ÖÌå£¬³¢ÊÔÊ¹ÓÃÄ¬ÈÏ×ÖÌå")
+        plt.rcParams["font.family"] = "sans-serif"
+    
     plt.rcParams["axes.unicode_minus"] = False
-    logger.info("æˆåŠŸé…ç½®ä¸­æ–‡å­—ä½“")
+    logger.info("³É¹¦ÅäÖÃÖĞÎÄ×ÖÌå")
 except Exception as e:
-    logger.error(f"ä¸­æ–‡å­—ä½“é…ç½®å¤±è´¥: {str(e)}")
-    logger.warning("å›¾è¡¨å¯èƒ½æ— æ³•æ­£å¸¸æ˜¾ç¤ºä¸­æ–‡")
+    logger.error(f"ÖĞÎÄ×ÖÌåÅäÖÃÊ§°Ü: {str(e)}")
+    logger.warning("Í¼±í¿ÉÄÜÎŞ·¨Õı³£ÏÔÊ¾ÖĞÎÄ")
 
 
-### 1. è¿æ¥MySQLæ•°æ®åº“å¹¶è·å–æ•°æ®
-def get_data_from_mysql():
-    """ä»MySQLè·å–ç”¨æˆ·è¡Œä¸ºæ•°æ®"""
-    logger.info("æ­£åœ¨è¿æ¥æ•°æ®åº“å¹¶è·å–æ•°æ®...")
-    conn = None
+### 1. Á¬½ÓMySQLÊı¾İ¿â²¢»ñÈ¡Êı¾İ (Ö§³Ö·Ö¿é¶ÁÈ¡)
+def get_data_from_mysql(use_aggregated_query=False, chunk_size=100000):
+    """´ÓMySQL»ñÈ¡ÓÃ»§ĞĞÎªÊı¾İ£¬Ö§³Ö·Ö¿é¶ÁÈ¡ºÍÔ¤¾ÛºÏ"""
+    logger.info("ÕıÔÚÁ¬½ÓÊı¾İ¿â²¢»ñÈ¡Êı¾İ...")
+    
+    # ¼ÇÂ¼ÄÚ´æÊ¹ÓÃÇé¿ö
+    start_mem = psutil.virtual_memory().used / (1024 ** 2)  # MB
+    
     try:
         conn = pymysql.connect(
             host='127.0.0.1',
@@ -55,254 +106,294 @@ def get_data_from_mysql():
             user='root',
             password='root',
             database='dblab',
-            connect_timeout=10,
+            connect_timeout=30,  # Ôö¼Ó³¬Ê±Ê±¼ä
             charset='utf8mb4'
         )
         
-        # æ£€æŸ¥è¡¨æ˜¯å¦å­˜åœ¨
+        # ¼ì²é±íÊÇ·ñ´æÔÚ
         with conn.cursor() as cursor:
             cursor.execute("SHOW TABLES LIKE 'user_action'")
             if not cursor.fetchone():
-                logger.error("é”™è¯¯: æ•°æ®åº“ä¸­æ²¡æœ‰åä¸º 'user_action' çš„è¡¨")
+                logger.error("´íÎó: Êı¾İ¿âÖĞÃ»ÓĞÃûÎª 'user_action' µÄ±í")
                 return None
         
-        # è·å–æ•°æ®
-        query = "SELECT * FROM user_action"
-        data = pd.read_sql(query, conn)
+        # ¸ù¾İÊı¾İ¼¯´óĞ¡Ñ¡Ôñ²éÑ¯·½Ê½
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM user_action")
+            total_rows = cursor.fetchone()[0]
+            logger.info(f"Êı¾İ±í×ÜĞĞÊı: {total_rows:,}")
+            
+            # ´óÊı¾İ¼¯Ê¹ÓÃÔ¤¾ÛºÏ²éÑ¯
+            if total_rows > 5000000 or use_aggregated_query:  # 500ÍòÌõÒÔÉÏÊ¹ÓÃ¾ÛºÏ
+                logger.info("¼ì²âµ½´óÊı¾İ¼¯£¬Ê¹ÓÃÔ¤¾ÛºÏ²éÑ¯...")
+                query = """
+                SELECT 
+                    behavior_type,
+                    DATE_FORMAT(visit_date, '%%Y-%%m') AS month,
+                    DATE_FORMAT(visit_date, '%%d') AS day,
+                    item_category,
+                    province,
+                    COUNT(DISTINCT uid) AS user_count,
+                    COUNT(*) AS total_actions
+                FROM user_action
+                GROUP BY behavior_type, month, day, item_category, province
+                """
+                logger.info("Ö´ĞĞ¾ÛºÏ²éÑ¯...")
+                data = pd.read_sql(query, conn)
+                data['behavior_type_num'] = pd.to_numeric(data['behavior_type'], errors='coerce')
+            else:
+                logger.info("Ê¹ÓÃÍêÕûÊı¾İ²éÑ¯...")
+                query = "SELECT * FROM user_action"
+                
+                # ´óÊı¾İ¼¯·Ö¿é¶ÁÈ¡
+                if total_rows > 1000000:
+                    logger.info(f"Êı¾İ¼¯½Ï´ó({total_rows:,}ĞĞ)£¬ÆôÓÃ·Ö¿é¶ÁÈ¡(chunk_size={chunk_size})")
+                    chunks = []
+                    for i, chunk in enumerate(pd.read_sql(query, conn, chunksize=chunk_size)):
+                        chunks.append(chunk)
+                        logger.info(f"ÒÑ¶ÁÈ¡Çø¿é #{i+1}, ÀÛ¼ÆĞĞÊı: {len(pd.concat(chunks, ignore_index=True)):,}")
+                    data = pd.concat(chunks, ignore_index=True)
+                else:
+                    data = pd.read_sql(query, conn)
         
-        # æ£€æŸ¥æ•°æ®æ˜¯å¦ä¸ºç©º
+        # ¼ì²éÊı¾İÊÇ·ñÎª¿Õ
         if data.empty:
-            logger.warning("è­¦å‘Š: æ•°æ®åº“æŸ¥è¯¢è¿”å›ç©ºç»“æœ")
+            logger.warning("¾¯¸æ: Êı¾İ¿â²éÑ¯·µ»Ø¿Õ½á¹û")
             return None
         
-        logger.info(f"æˆåŠŸè·å–æ•°æ®ï¼Œæ•°æ®å½¢çŠ¶: {data.shape}")
+        # ÄÚ´æÊ¹ÓÃ±¨¸æ
+        end_mem = psutil.virtual_memory().used / (1024 ** 2)
+        logger.info(f"³É¹¦»ñÈ¡Êı¾İ£¬ĞĞÊı: {len(data):,}, ÄÚ´æÊ¹ÓÃ: {end_mem - start_mem:.2f} MB")
         return data
     
     except pymysql.OperationalError as oe:
-        logger.error(f"æ•°æ®åº“è¿æ¥é”™è¯¯: {str(oe)}")
-        logger.error("è¯·æ£€æŸ¥: 1. MySQLæœåŠ¡æ˜¯å¦è¿è¡Œ 2. æ•°æ®åº“é…ç½®æ˜¯å¦æ­£ç¡®")
-        return None
-    
-    except pymysql.ProgrammingError as pe:
-        logger.error(f"SQLè¯­æ³•é”™è¯¯: {str(pe)}")
+        logger.error(f"Êı¾İ¿âÁ¬½Ó´íÎó: {str(oe)}")
+        logger.error("Çë¼ì²é: 1. MySQL·şÎñÊÇ·ñÔËĞĞ 2. Êı¾İ¿âÅäÖÃÊÇ·ñÕıÈ·")
         return None
     
     except Exception as e:
-        logger.error(f"æ•°æ®åº“æ“ä½œæœªçŸ¥é”™è¯¯: {str(e)}")
+        logger.error(f"Êı¾İ¿â²Ù×÷´íÎó: {str(e)}")
         logger.error(traceback.format_exc())
         return None
     
     finally:
-        if conn:
+        if 'conn' in locals() and conn:
             conn.close()
-            logger.info("æ•°æ®åº“è¿æ¥å·²å…³é—­")
+            logger.info("Êı¾İ¿âÁ¬½ÓÒÑ¹Ø±Õ")
 
 
-### 2. æ•°æ®é¢„å¤„ç†å‡½æ•°
+### 2. Êı¾İÔ¤´¦Àíº¯Êı (ÓÅ»¯ÄÚ´æÊ¹ÓÃ)
 def preprocess_data(data):
-    """è½¬æ¢æ•°æ®ç±»å‹ã€æå–æœˆä»½å¹¶å¤„ç†ç©ºå€¼"""
-    logger.info("æ­£åœ¨è¿›è¡Œæ•°æ®é¢„å¤„ç†...")
+    """×ª»»Êı¾İÀàĞÍ¡¢ÌáÈ¡ÔÂ·İ²¢´¦Àí¿ÕÖµ"""
+    logger.info("ÕıÔÚ½øĞĞÊı¾İÔ¤´¦Àí...")
+    start_time = time.time()
+    
     try:
-        # æ£€æŸ¥æ•°æ®æœ‰æ•ˆæ€§
+        # ¼ì²éÊı¾İÓĞĞ§ĞÔ
         if data is None or data.empty:
-            logger.error("é”™è¯¯: æ•°æ®ä¸ºç©ºï¼Œæ— æ³•è¿›è¡Œé¢„å¤„ç†")
+            logger.error("´íÎó: Êı¾İÎª¿Õ£¬ÎŞ·¨½øĞĞÔ¤´¦Àí")
             return None
         
-        # è®°å½•åŸå§‹æ•°æ®å½¢çŠ¶
+        # ¼ÇÂ¼Ô­Ê¼Êı¾İĞÎ×´
         original_shape = data.shape
         
-        # æ£€æŸ¥å¹¶å¤„ç†ç©ºå€¼
+        # ¼ì²é²¢´¦Àí¿ÕÖµ
         null_counts = data.isnull().sum()
         if null_counts.sum() > 0:
             null_columns = null_counts[null_counts > 0]
-            logger.warning(f"æ•°æ®å­˜åœ¨ç©ºå€¼ï¼Œå„åˆ—ç©ºå€¼æ•°é‡:\n{null_columns}")
+            logger.warning(f"Êı¾İ´æÔÚ¿ÕÖµ£¬¸÷ÁĞ¿ÕÖµÊıÁ¿:\n{null_columns}")
             
-            # è®¡ç®—ç©ºå€¼æ¯”ä¾‹
+            # ¼ÆËã¿ÕÖµ±ÈÀı
             null_percent = (data.isnull().mean() * 100).round(2)
             high_null_cols = null_percent[null_percent > 30]
             
             if not high_null_cols.empty:
-                logger.warning(f"è­¦å‘Š: ä»¥ä¸‹åˆ—ç©ºå€¼æ¯”ä¾‹è¶…è¿‡30%:\n{high_null_cols}")
-                # åˆ é™¤ç©ºå€¼æ¯”ä¾‹è¿‡é«˜çš„åˆ—
+                logger.warning(f"¾¯¸æ: ÒÔÏÂÁĞ¿ÕÖµ±ÈÀı³¬¹ı30%:\n{high_null_cols}")
+                # É¾³ı¿ÕÖµ±ÈÀı¹ı¸ßµÄÁĞ
                 data = data.drop(columns=high_null_cols.index.tolist())
-                logger.info(f"å·²åˆ é™¤é«˜ç¼ºå¤±å€¼åˆ—: {high_null_cols.index.tolist()}")
+                logger.info(f"ÒÑÉ¾³ı¸ßÈ±Ê§ÖµÁĞ: {high_null_cols.index.tolist()}")
             
-            # åˆ é™¤å‰©ä½™ç©ºå€¼çš„è¡Œ
+            # É¾³ıÊ£Óà¿ÕÖµµÄĞĞ
             data = data.dropna()
-            logger.info(f"å·²ç§»é™¤ç©ºå€¼ï¼Œç§»é™¤è¡Œæ•°: {original_shape[0] - data.shape[0]}")
+            logger.info(f"ÒÑÒÆ³ı¿ÕÖµ£¬ÒÆ³ıĞĞÊı: {original_shape[0] - data.shape[0]}")
         
-        # æ£€æŸ¥å…³é”®åˆ—æ˜¯å¦å­˜åœ¨
+        # ¼ì²é¹Ø¼üÁĞÊÇ·ñ´æÔÚ
         required_columns = ['behavior_type', 'visit_date', 'uid', 'item_category', 'province']
         missing_columns = [col for col in required_columns if col not in data.columns]
         
         if missing_columns:
-            logger.error(f"é”™è¯¯: æ•°æ®ç¼ºå°‘å…³é”®åˆ—: {missing_columns}")
+            logger.error(f"´íÎó: Êı¾İÈ±ÉÙ¹Ø¼üÁĞ: {missing_columns}")
             return None
         
-        # è½¬æ¢è¡Œä¸ºç±»å‹ä¸ºæ•°å€¼å‹
-        try:
-            data['behavior_type_num'] = pd.to_numeric(data['behavior_type'], errors='coerce')
-            if data['behavior_type_num'].isna().any():
-                invalid_count = data['behavior_type_num'].isna().sum()
-                logger.warning(f"è­¦å‘Š: å‘ç° {invalid_count} æ¡æ— æ•ˆè¡Œä¸ºç±»å‹è®°å½•")
-                data = data.dropna(subset=['behavior_type_num'])
+        # ×ª»»ĞĞÎªÀàĞÍÎªÊıÖµĞÍ
+        if 'behavior_type_num' not in data.columns:  # ½öµ±Î´Ô¤¾ÛºÏÊ±Ö´ĞĞ
+            try:
+                data['behavior_type_num'] = pd.to_numeric(data['behavior_type'], errors='coerce')
+                if data['behavior_type_num'].isna().any():
+                    invalid_count = data['behavior_type_num'].isna().sum()
+                    logger.warning(f"¾¯¸æ: ·¢ÏÖ {invalid_count} ÌõÎŞĞ§ĞĞÎªÀàĞÍ¼ÇÂ¼")
+                    data = data.dropna(subset=['behavior_type_num'])
                 data['behavior_type_num'] = data['behavior_type_num'].astype(int)
-        except Exception as e:
-            logger.error(f"è¡Œä¸ºç±»å‹è½¬æ¢é”™è¯¯: {str(e)}")
-            return None
+            except Exception as e:
+                logger.error(f"ĞĞÎªÀàĞÍ×ª»»´íÎó: {str(e)}")
+                return None
         
-        # ä»æ—¥æœŸä¸­æå–æœˆä»½
-        try:
-            data['month'] = data['visit_date'].str[5:7]
-            # éªŒè¯æœˆä»½æ ¼å¼
-            invalid_months = data[~data['month'].str.match(r'^\d{2}$')]
-            if not invalid_months.empty:
-                logger.warning(f"è­¦å‘Š: å‘ç° {len(invalid_months)} æ¡æ— æ•ˆæ—¥æœŸè®°å½•")
-                data = data.drop(invalid_months.index)
-        except Exception as e:
-            logger.error(f"æ—¥æœŸå¤„ç†é”™è¯¯: {str(e)}")
-            return None
+        # ´ÓÈÕÆÚÖĞÌáÈ¡ÔÂ·İ
+        if 'month' not in data.columns:  # ½öµ±Î´Ô¤¾ÛºÏÊ±Ö´ĞĞ
+            try:
+                data['month'] = data['visit_date'].astype(str).str[5:7]
+                # ÑéÖ¤ÔÂ·İ¸ñÊ½
+                invalid_months = data[~data['month'].str.match(r'^\d{2}$')]
+                if not invalid_months.empty:
+                    logger.warning(f"¾¯¸æ: ·¢ÏÖ {len(invalid_months)} ÌõÎŞĞ§ÈÕÆÚ¼ÇÂ¼")
+                    data = data.drop(invalid_months.index)
+            except Exception as e:
+                logger.error(f"ÈÕÆÚ´¦Àí´íÎó: {str(e)}")
+                return None
         
-        # æå–æ—¥æœŸä¸­çš„æ—¥
-        try:
-            data['day'] = data['visit_date'].str[8:10]
-        except:
-            logger.warning("æ—¥æœŸæå–éƒ¨åˆ†å­—æ®µå¤±è´¥ï¼Œå¯èƒ½ä¸å½±å“åç»­åˆ†æ")
+        # ÌáÈ¡ÈÕÆÚÖĞµÄÈÕ
+        if 'day' not in data.columns:  # ½öµ±Î´Ô¤¾ÛºÏÊ±Ö´ĞĞ
+            try:
+                data['day'] = data['visit_date'].astype(str).str[8:10]
+            except:
+                logger.warning("ÈÕÆÚÌáÈ¡²¿·Ö×Ö¶ÎÊ§°Ü£¬¿ÉÄÜ²»Ó°ÏìºóĞø·ÖÎö")
         
-        logger.info(f"æ•°æ®é¢„å¤„ç†å®Œæˆï¼Œå¤„ç†åå½¢çŠ¶: {data.shape}")
+        # ´¦ÀíÊ±¼ä±¨¸æ
+        elapsed = time.time() - start_time
+        logger.info(f"Êı¾İÔ¤´¦ÀíÍê³É£¬ĞĞÊı: {len(data):,}, ºÄÊ±: {elapsed:.2f}Ãë")
         return data
     
     except Exception as e:
-        logger.error(f"æ•°æ®é¢„å¤„ç†è¿‡ç¨‹ä¸­å‘ç”Ÿé”™è¯¯: {str(e)}")
+        logger.error(f"Êı¾İÔ¤´¦Àí¹ı³ÌÖĞ·¢Éú´íÎó: {str(e)}")
         logger.error(traceback.format_exc())
         return None
 
 
-### 3. æ¶ˆè´¹è€…è¡Œä¸ºåˆ†å¸ƒå¯è§†åŒ–ï¼ˆç›´æ–¹å›¾ï¼‰
+### 3. Ïû·ÑÕßĞĞÎª·Ö²¼¿ÉÊÓ»¯£¨Ö±·½Í¼£©
 def plot_behavior_distribution(data):
-    """ä½¿ç”¨matplotlibç»˜åˆ¶è¡Œä¸ºç±»å‹åˆ†å¸ƒç›´æ–¹å›¾"""
+    """Ê¹ÓÃmatplotlib»æÖÆĞĞÎªÀàĞÍ·Ö²¼Ö±·½Í¼"""
     try:
         if data is None or data.empty:
-            logger.error("é”™è¯¯: æ— æœ‰æ•ˆæ•°æ®ç”¨äºç»˜åˆ¶è¡Œä¸ºåˆ†å¸ƒå›¾")
+            logger.error("´íÎó: ÎŞÓĞĞ§Êı¾İÓÃÓÚ»æÖÆĞĞÎª·Ö²¼Í¼")
             return
         
-        logger.info("æ­£åœ¨ç»˜åˆ¶æ¶ˆè´¹è€…è¡Œä¸ºç±»å‹åˆ†å¸ƒç›´æ–¹å›¾...")
+        logger.info("ÕıÔÚ»æÖÆÏû·ÑÕßĞĞÎªÀàĞÍ·Ö²¼Ö±·½Í¼...")
         
-        # æ£€æŸ¥è¡Œä¸ºç±»å‹æ•°æ®æ˜¯å¦æœ‰æ•ˆ
+        # ¼ì²éĞĞÎªÀàĞÍÊı¾İÊÇ·ñÓĞĞ§
         if 'behavior_type_num' not in data.columns:
-            logger.error("é”™è¯¯: æ•°æ®ä¸­ç¼ºå°‘è¡Œä¸ºç±»å‹åˆ—")
+            logger.error("´íÎó: Êı¾İÖĞÈ±ÉÙĞĞÎªÀàĞÍÁĞ")
             return
         
         plt.figure(figsize=(10, 6))
         sns.histplot(data['behavior_type_num'], kde=False, bins=4, color='lightblue')
-        plt.title('æ¶ˆè´¹è€…è¡Œä¸ºç±»å‹åˆ†å¸ƒ')
-        plt.xlabel('è¡Œä¸ºç±»å‹ï¼ˆ1=æµè§ˆï¼Œ4=è´­ä¹°ï¼‰')
-        plt.ylabel('é¢‘æ•°')
+        plt.title('Ïû·ÑÕßĞĞÎªÀàĞÍ·Ö²¼')
+        plt.xlabel('ĞĞÎªÀàĞÍ£¨1=ä¯ÀÀ£¬4=¹ºÂò£©')
+        plt.ylabel('ÆµÊı')
         plt.xticks([1, 2, 3, 4])
         plt.grid(True, alpha=0.3)
         
-        # åˆ›å»ºè¾“å‡ºç›®å½•
+        # ´´½¨Êä³öÄ¿Â¼
         os.makedirs("output", exist_ok=True)
         output_path = os.path.join("output", 'behavior_distribution.png')
         plt.savefig(output_path, dpi=300)
         plt.close()
-        logger.info(f"æ¶ˆè´¹è€…è¡Œä¸ºç±»å‹åˆ†å¸ƒç›´æ–¹å›¾ç»˜åˆ¶å®Œæˆï¼Œå·²ä¿å­˜è‡³: {output_path}")
+        logger.info(f"Ïû·ÑÕßĞĞÎªÀàĞÍ·Ö²¼Ö±·½Í¼»æÖÆÍê³É£¬ÒÑ±£´æÖÁ: {output_path}")
     
     except ValueError as ve:
-        logger.error(f"ç»˜å›¾æ•°æ®é”™è¯¯: {str(ve)}")
+        logger.error(f"»æÍ¼Êı¾İ´íÎó: {str(ve)}")
     
     except RuntimeError as re:
-        logger.error(f"ç»˜å›¾è¿è¡Œæ—¶é”™è¯¯: {str(re)}")
+        logger.error(f"»æÍ¼ÔËĞĞÊ±´íÎó: {str(re)}")
     
     except Exception as e:
-        logger.error(f"ç»˜åˆ¶è¡Œä¸ºåˆ†å¸ƒå›¾æ—¶å‘ç”ŸæœªçŸ¥é”™è¯¯: {str(e)}")
+        logger.error(f"»æÖÆĞĞÎª·Ö²¼Í¼Ê±·¢ÉúÎ´Öª´íÎó: {str(e)}")
         logger.error(traceback.format_exc())
 
 
-### 4. è´­ä¹°é‡å‰åçš„å•†å“åˆ†ç±»ï¼ˆæŸ±çŠ¶å›¾ï¼‰
+### 4. ¹ºÂòÁ¿Ç°Ê®µÄÉÌÆ··ÖÀà£¨Öù×´Í¼£©
 def plot_top_purchased_categories(data):
-    """ä½¿ç”¨seabornç»˜åˆ¶è´­ä¹°é‡å‰åçš„å•†å“åˆ†ç±»"""
+    """Ê¹ÓÃseaborn»æÖÆ¹ºÂòÁ¿Ç°Ê®µÄÉÌÆ··ÖÀà"""
     try:
         if data is None or data.empty:
-            logger.error("é”™è¯¯: æ— æœ‰æ•ˆæ•°æ®ç”¨äºç»˜åˆ¶å•†å“åˆ†ç±»å›¾")
+            logger.error("´íÎó: ÎŞÓĞĞ§Êı¾İÓÃÓÚ»æÖÆÉÌÆ··ÖÀàÍ¼")
             return
         
-        logger.info("æ­£åœ¨åˆ†æå¹¶ç»˜åˆ¶è´­ä¹°é‡å‰åçš„å•†å“åˆ†ç±»...")
+        logger.info("ÕıÔÚ·ÖÎö²¢»æÖÆ¹ºÂòÁ¿Ç°Ê®µÄÉÌÆ··ÖÀà...")
         
-        # æ£€æŸ¥å¿…è¦åˆ—æ˜¯å¦å­˜åœ¨
+        # ¼ì²é±ØÒªÁĞÊÇ·ñ´æÔÚ
         required_cols = ['behavior_type_num', 'item_category']
         missing_cols = [col for col in required_cols if col not in data.columns]
         if missing_cols:
-            logger.error(f"é”™è¯¯: æ•°æ®ä¸­ç¼ºå°‘å…³é”®åˆ—: {missing_cols}")
+            logger.error(f"´íÎó: Êı¾İÖĞÈ±ÉÙ¹Ø¼üÁĞ: {missing_cols}")
             return
         
-        # ç­›é€‰è´­ä¹°è¡Œä¸º
+        # É¸Ñ¡¹ºÂòĞĞÎª
         if 4 not in data['behavior_type_num'].values:
-            logger.warning("è­¦å‘Š: æ•°æ®ä¸­æ²¡æœ‰è´­ä¹°è¡Œä¸ºè®°å½•")
+            logger.warning("¾¯¸æ: Êı¾İÖĞÃ»ÓĞ¹ºÂòĞĞÎª¼ÇÂ¼")
             return
         
         buy_data = data[data['behavior_type_num'] == 4].copy()
         
-        # æ£€æŸ¥æ˜¯å¦æœ‰è¶³å¤Ÿçš„è´­ä¹°è®°å½•
+        # ¼ì²éÊÇ·ñÓĞ×ã¹»µÄ¹ºÂò¼ÇÂ¼
         if buy_data.empty:
-            logger.warning("è­¦å‘Š: æ²¡æœ‰è´­ä¹°è®°å½•å¯ç”¨äºåˆ†æ")
+            logger.warning("¾¯¸æ: Ã»ÓĞ¹ºÂò¼ÇÂ¼¿ÉÓÃÓÚ·ÖÎö")
             return
         
-        # ç»Ÿè®¡å•†å“åˆ†ç±»è´­ä¹°æ¬¡æ•°
+        # Í³¼ÆÉÌÆ··ÖÀà¹ºÂò´ÎÊı
         category_count = buy_data['item_category'].value_counts()
         
-        # æ£€æŸ¥æ˜¯å¦æœ‰è¶³å¤Ÿçš„æ•°æ®ç‚¹
+        # ¼ì²éÊÇ·ñÓĞ×ã¹»µÄÊı¾İµã
         if len(category_count) < 5:
-            logger.warning(f"è­¦å‘Š: åªæœ‰ {len(category_count)} ä¸ªå•†å“åˆ†ç±»ï¼Œå°‘äºå»ºè®®çš„10ä¸ª")
+            logger.warning(f"¾¯¸æ: Ö»ÓĞ {len(category_count)} ¸öÉÌÆ··ÖÀà£¬ÉÙÓÚ½¨ÒéµÄ10¸ö")
         
         top_count = min(10, len(category_count))
         category_count = category_count.nlargest(top_count)
         
         plt.figure(figsize=(12, 7))
         ax = sns.barplot(x=category_count.index, y=category_count.values, color='green')
-        plt.title('è´­ä¹°é‡å‰åçš„å•†å“åˆ†ç±»')
-        plt.xlabel('å•†å“åˆ†ç±»ID')
-        plt.ylabel('è´­ä¹°æ¬¡æ•°')
+        plt.title('¹ºÂòÁ¿Ç°Ê®µÄÉÌÆ··ÖÀà')
+        plt.xlabel('ÉÌÆ··ÖÀàID')
+        plt.ylabel('¹ºÂò´ÎÊı')
         plt.xticks(rotation=45, ha='right')
         plt.grid(True, alpha=0.3)
         
-        # ä¸ºæ¯ä¸ªæŸ±å­æ·»åŠ æ•°å€¼æ ‡ç­¾
+        # ÎªÃ¿¸öÖù×ÓÌí¼ÓÊıÖµ±êÇ©
         for i, v in enumerate(category_count.values):
             ax.text(i, v + 0.05 * max(category_count.values), f'{v}', ha='center', fontsize=9)
         
-        # åˆ›å»ºè¾“å‡ºç›®å½•
+        # ´´½¨Êä³öÄ¿Â¼
         os.makedirs("output", exist_ok=True)
         output_path = os.path.join("output", 'top_categories.png')
         plt.savefig(output_path, dpi=300)
         plt.close()
-        logger.info(f"è´­ä¹°é‡å‰åçš„å•†å“åˆ†ç±»æŸ±çŠ¶å›¾ç»˜åˆ¶å®Œæˆï¼Œå·²ä¿å­˜è‡³: {output_path}")
+        logger.info(f"¹ºÂòÁ¿Ç°Ê®µÄÉÌÆ··ÖÀàÖù×´Í¼»æÖÆÍê³É£¬ÒÑ±£´æÖÁ: {output_path}")
     
     except Exception as e:
-        logger.error(f"ç»˜åˆ¶å•†å“åˆ†ç±»å›¾æ—¶å‘ç”Ÿé”™è¯¯: {str(e)}")
+        logger.error(f"»æÖÆÉÌÆ··ÖÀàÍ¼Ê±·¢Éú´íÎó: {str(e)}")
         logger.error(traceback.format_exc())
 
 
-### 5. æŒ‰æœˆåˆ†æè´­ä¹°è¡Œä¸ºï¼ˆåˆ†é¢ç›´æ–¹å›¾ï¼‰
+### 5. °´ÔÂ·ÖÎö¹ºÂòĞĞÎª£¨·ÖÃæÖ±·½Í¼£©
 def plot_monthly_behavior(data):
-    """ä½¿ç”¨seabornåˆ†é¢ç›´æ–¹å›¾åˆ†æå„æœˆè¡Œä¸ºåˆ†å¸ƒ"""
+    """Ê¹ÓÃseaborn·ÖÃæÖ±·½Í¼·ÖÎö¸÷ÔÂĞĞÎª·Ö²¼"""
     try:
         if data is None or data.empty:
-            logger.error("é”™è¯¯: æ— æœ‰æ•ˆæ•°æ®ç”¨äºç»˜åˆ¶æœˆåº¦è¡Œä¸ºåˆ†å¸ƒå›¾")
+            logger.error("´íÎó: ÎŞÓĞĞ§Êı¾İÓÃÓÚ»æÖÆÔÂ¶ÈĞĞÎª·Ö²¼Í¼")
             return
         
-        logger.info("æ­£åœ¨ç»˜åˆ¶å„æœˆä»½æ¶ˆè´¹è€…è¡Œä¸ºåˆ†å¸ƒåˆ†é¢ç›´æ–¹å›¾...")
+        logger.info("ÕıÔÚ»æÖÆ¸÷ÔÂ·İÏû·ÑÕßĞĞÎª·Ö²¼·ÖÃæÖ±·½Í¼...")
         
-        # æ£€æŸ¥å¿…è¦åˆ—æ˜¯å¦å­˜åœ¨
+        # ¼ì²é±ØÒªÁĞÊÇ·ñ´æÔÚ
         required_cols = ['behavior_type_num', 'month']
         missing_cols = [col for col in required_cols if col not in data.columns]
         if missing_cols:
-            logger.error(f"é”™è¯¯: æ•°æ®ä¸­ç¼ºå°‘å…³é”®åˆ—: {missing_cols}")
+            logger.error(f"´íÎó: Êı¾İÖĞÈ±ÉÙ¹Ø¼üÁĞ: {missing_cols}")
             return
         
-        # æ£€æŸ¥æœˆä»½æ•°æ®æ˜¯å¦æœ‰æ•ˆ
+        # ¼ì²éÔÂ·İÊı¾İÊÇ·ñÓĞĞ§
         valid_months = data['month'].unique()
         if len(valid_months) < 2:
-            logger.warning(f"è­¦å‘Š: åªæœ‰ {len(valid_months)} ä¸ªæœˆä»½çš„æ•°æ®ï¼Œå¯èƒ½ä¸é€‚åˆåˆ†é¢åˆ†æ")
+            logger.warning(f"¾¯¸æ: Ö»ÓĞ {len(valid_months)} ¸öÔÂ·İµÄÊı¾İ£¬¿ÉÄÜ²»ÊÊºÏ·ÖÃæ·ÖÎö")
         
         plt.figure(figsize=(14, 8))
         grid = sns.histplot(
@@ -312,93 +403,93 @@ def plot_monthly_behavior(data):
             bins=4,
             kde=False,
             color='lightgreen',
-            col_wrap=min(3, len(valid_months))) # è‡ªé€‚åº”åˆ—æ•°
+            col_wrap=min(3, len(valid_months))) # ×ÔÊÊÓ¦ÁĞÊı
         
-        plt.suptitle('å„æœˆä»½æ¶ˆè´¹è€…è¡Œä¸ºåˆ†å¸ƒ', y=0.95, fontsize=14)
+        plt.suptitle('¸÷ÔÂ·İÏû·ÑÕßĞĞÎª·Ö²¼', y=0.95, fontsize=14)
         plt.tight_layout()
         
-        # åˆ›å»ºè¾“å‡ºç›®å½•
+        # ´´½¨Êä³öÄ¿Â¼
         os.makedirs("output", exist_ok=True)
         output_path = os.path.join("output", 'monthly_behavior.png')
         plt.savefig(output_path, dpi=300)
         plt.close()
-        logger.info(f"å„æœˆä»½æ¶ˆè´¹è€…è¡Œä¸ºåˆ†å¸ƒåˆ†é¢ç›´æ–¹å›¾ç»˜åˆ¶å®Œæˆï¼Œå·²ä¿å­˜è‡³: {output_path}")
+        logger.info(f"¸÷ÔÂ·İÏû·ÑÕßĞĞÎª·Ö²¼·ÖÃæÖ±·½Í¼»æÖÆÍê³É£¬ÒÑ±£´æÖÁ: {output_path}")
     
     except Exception as e:
-        logger.error(f"ç»˜åˆ¶æœˆåº¦è¡Œä¸ºåˆ†å¸ƒå›¾æ—¶å‘ç”Ÿé”™è¯¯: {str(e)}")
+        logger.error(f"»æÖÆÔÂ¶ÈĞĞÎª·Ö²¼Í¼Ê±·¢Éú´íÎó: {str(e)}")
         logger.error(traceback.format_exc())
 
 
-### 6. å„çœä»½è´­ä¹°æ¬²æœ›åˆ†æï¼ˆåœ°å›¾å¯è§†åŒ–ï¼‰
+### 6. ¸÷Ê¡·İ¹ºÂòÓûÍû·ÖÎö£¨µØÍ¼¿ÉÊÓ»¯£©
 def plot_province_purchase(data):
-    """ä½¿ç”¨pyechartsç»˜åˆ¶å„çœä»½è´­ä¹°é‡åœ°å›¾"""
+    """Ê¹ÓÃpyecharts»æÖÆ¸÷Ê¡·İ¹ºÂòÁ¿µØÍ¼"""
     try:
         if data is None or data.empty:
-            logger.error("é”™è¯¯: æ— æœ‰æ•ˆæ•°æ®ç”¨äºç»˜åˆ¶çœä»½è´­ä¹°åœ°å›¾")
+            logger.error("´íÎó: ÎŞÓĞĞ§Êı¾İÓÃÓÚ»æÖÆÊ¡·İ¹ºÂòµØÍ¼")
             return
         
-        logger.info("æ­£åœ¨åˆ†æå„çœä»½è´­ä¹°é‡å¹¶ç»˜åˆ¶åœ°å›¾...")
+        logger.info("ÕıÔÚ·ÖÎö¸÷Ê¡·İ¹ºÂòÁ¿²¢»æÖÆµØÍ¼...")
         
-        # æ£€æŸ¥å¿…è¦åˆ—æ˜¯å¦å­˜åœ¨
+        # ¼ì²é±ØÒªÁĞÊÇ·ñ´æÔÚ
         required_cols = ['behavior_type_num', 'province']
         missing_cols = [col for col in required_cols if col not in data.columns]
         if missing_cols:
-            logger.error(f"é”™è¯¯: æ•°æ®ä¸­ç¼ºå°‘å…³é”®åˆ—: {missing_cols}")
+            logger.error(f"´íÎó: Êı¾İÖĞÈ±ÉÙ¹Ø¼üÁĞ: {missing_cols}")
             return
         
-        # ç­›é€‰è´­ä¹°è¡Œä¸º
+        # É¸Ñ¡¹ºÂòĞĞÎª
         if 4 not in data['behavior_type_num'].values:
-            logger.warning("è­¦å‘Š: æ•°æ®ä¸­æ²¡æœ‰è´­ä¹°è¡Œä¸ºè®°å½•")
+            logger.warning("¾¯¸æ: Êı¾İÖĞÃ»ÓĞ¹ºÂòĞĞÎª¼ÇÂ¼")
             return
         
         buy_data = data[data['behavior_type_num'] == 4].copy()
         
-        # æ£€æŸ¥æ˜¯å¦æœ‰è¶³å¤Ÿçš„è´­ä¹°è®°å½•
+        # ¼ì²éÊÇ·ñÓĞ×ã¹»µÄ¹ºÂò¼ÇÂ¼
         if buy_data.empty:
-            logger.warning("è­¦å‘Š: æ²¡æœ‰è´­ä¹°è®°å½•å¯ç”¨äºåˆ†æ")
+            logger.warning("¾¯¸æ: Ã»ÓĞ¹ºÂò¼ÇÂ¼¿ÉÓÃÓÚ·ÖÎö")
             return
         
-        # ç»Ÿè®¡çœä»½è´­ä¹°é‡
+        # Í³¼ÆÊ¡·İ¹ºÂòÁ¿
         province_count = buy_data['province'].value_counts().reset_index()
         province_count.columns = ['province', 'count']
         
-        # æ£€æŸ¥çœä»½æ•°æ®æ˜¯å¦æœ‰æ•ˆ
+        # ¼ì²éÊ¡·İÊı¾İÊÇ·ñÓĞĞ§
         if province_count['province'].isna().any():
-            logger.warning("è­¦å‘Š: å­˜åœ¨ç©ºçœä»½è®°å½•ï¼Œå·²è¿‡æ»¤")
+            logger.warning("¾¯¸æ: ´æÔÚ¿ÕÊ¡·İ¼ÇÂ¼£¬ÒÑ¹ıÂË")
             province_count = province_count.dropna(subset=['province'])
         
-        # æ ‡å‡†åŒ–çœä»½åç§°
+        # ±ê×¼»¯Ê¡·İÃû³Æ
         province_mapping = {
-            'åŒ—äº¬': 'åŒ—äº¬å¸‚', 'ä¸Šæµ·': 'ä¸Šæµ·å¸‚', 'å¤©æ´¥': 'å¤©æ´¥å¸‚', 'é‡åº†': 'é‡åº†å¸‚',
-            'æ²³åŒ—': 'æ²³åŒ—çœ', 'å±±è¥¿': 'å±±è¥¿çœ', 'è¾½å®': 'è¾½å®çœ', 'å‰æ—': 'å‰æ—çœ',
-            'é»‘é¾™æ±Ÿ': 'é»‘é¾™æ±Ÿçœ', 'æ±Ÿè‹': 'æ±Ÿè‹çœ', 'æµ™æ±Ÿ': 'æµ™æ±Ÿçœ', 'å®‰å¾½': 'å®‰å¾½çœ',
-            'ç¦å»º': 'ç¦å»ºçœ', 'æ±Ÿè¥¿': 'æ±Ÿè¥¿çœ', 'å±±ä¸œ': 'å±±ä¸œçœ', 'æ²³å—': 'æ²³å—çœ',
-            'æ¹–åŒ—': 'æ¹–åŒ—çœ', 'æ¹–å—': 'æ¹–å—çœ', 'å¹¿ä¸œ': 'å¹¿ä¸œçœ', 'æµ·å—': 'æµ·å—çœ',
-            'å››å·': 'å››å·çœ', 'è´µå·': 'è´µå·çœ', 'äº‘å—': 'äº‘å—çœ', 'é™•è¥¿': 'é™•è¥¿çœ',
-            'ç”˜è‚ƒ': 'ç”˜è‚ƒçœ', 'é’æµ·': 'é’æµ·çœ', 'å°æ¹¾': 'å°æ¹¾çœ',
-            'å†…è’™å¤': 'å†…è’™å¤è‡ªæ²»åŒº', 'å¹¿è¥¿': 'å¹¿è¥¿å£®æ—è‡ªæ²»åŒº', 'è¥¿è—': 'è¥¿è—è‡ªæ²»åŒº',
-            'å®å¤': 'å®å¤å›æ—è‡ªæ²»åŒº', 'æ–°ç–†': 'æ–°ç–†ç»´å¾å°”è‡ªæ²»åŒº',
-            'é¦™æ¸¯': 'é¦™æ¸¯ç‰¹åˆ«è¡Œæ”¿åŒº', 'æ¾³é—¨': 'æ¾³é—¨ç‰¹åˆ«è¡Œæ”¿åŒº'
+            '±±¾©': '±±¾©ÊĞ', 'ÉÏº£': 'ÉÏº£ÊĞ', 'Ìì½ò': 'Ìì½òÊĞ', 'ÖØÇì': 'ÖØÇìÊĞ',
+            'ºÓ±±': 'ºÓ±±Ê¡', 'É½Î÷': 'É½Î÷Ê¡', 'ÁÉÄş': 'ÁÉÄşÊ¡', '¼ªÁÖ': '¼ªÁÖÊ¡',
+            'ºÚÁú½­': 'ºÚÁú½­Ê¡', '½­ËÕ': '½­ËÕÊ¡', 'Õã½­': 'Õã½­Ê¡', '°²»Õ': '°²»ÕÊ¡',
+            '¸£½¨': '¸£½¨Ê¡', '½­Î÷': '½­Î÷Ê¡', 'É½¶«': 'É½¶«Ê¡', 'ºÓÄÏ': 'ºÓÄÏÊ¡',
+            'ºş±±': 'ºş±±Ê¡', 'ºşÄÏ': 'ºşÄÏÊ¡', '¹ã¶«': '¹ã¶«Ê¡', 'º£ÄÏ': 'º£ÄÏÊ¡',
+            'ËÄ´¨': 'ËÄ´¨Ê¡', '¹óÖİ': '¹óÖİÊ¡', 'ÔÆÄÏ': 'ÔÆÄÏÊ¡', 'ÉÂÎ÷': 'ÉÂÎ÷Ê¡',
+            '¸ÊËà': '¸ÊËàÊ¡', 'Çàº£': 'Çàº£Ê¡', 'Ì¨Íå': 'Ì¨ÍåÊ¡',
+            'ÄÚÃÉ¹Å': 'ÄÚÃÉ¹Å×ÔÖÎÇø', '¹ãÎ÷': '¹ãÎ÷×³×å×ÔÖÎÇø', 'Î÷²Ø': 'Î÷²Ø×ÔÖÎÇø',
+            'ÄşÏÄ': 'ÄşÏÄ»Ø×å×ÔÖÎÇø', 'ĞÂ½®': 'ĞÂ½®Î¬Îá¶û×ÔÖÎÇø',
+            'Ïã¸Û': 'Ïã¸ÛÌØ±ğĞĞÕşÇø', '°ÄÃÅ': '°ÄÃÅÌØ±ğĞĞÕşÇø'
         }
         
         province_count['province'] = province_count['province'].map(province_mapping).fillna(province_count['province'])
         
-        # è½¬æ¢ä¸ºpyechartséœ€è¦çš„æ•°æ®æ ¼å¼
+        # ×ª»»ÎªpyechartsĞèÒªµÄÊı¾İ¸ñÊ½
         map_data = [[prov, count] for prov, count in zip(province_count['province'], province_count['count'])]
         
-        # åˆ›å»ºåœ°å›¾
+        # ´´½¨µØÍ¼
         min_value = province_count['count'].min()
         max_value = province_count['count'].max()
         
-        # å¤„ç†æ‰€æœ‰å€¼ä¸º0çš„ç‰¹æ®Šæƒ…å†µ
+        # ´¦ÀíËùÓĞÖµÎª0µÄÌØÊâÇé¿ö
         if min_value == max_value == 0:
-            min_value, max_value = 0, 1  # é¿å…é™¤ä»¥é›¶é”™è¯¯
+            min_value, max_value = 0, 1  # ±ÜÃâ³ıÒÔÁã´íÎó
         
         china_map = (
             Map()
-            .add("è´­ä¹°é‡", map_data, "china", is_map_symbol_show=False)
+            .add("¹ºÂòÁ¿", map_data, "china", is_map_symbol_show=False)
             .set_global_opts(
-                title_opts=opts.TitleOpts(title="å„çœä»½è´­ä¹°é‡åˆ†å¸ƒ"),
+                title_opts=opts.TitleOpts(title="¸÷Ê¡·İ¹ºÂòÁ¿·Ö²¼"),
                 visualmap_opts=opts.VisualMapOpts(
                     min_=min_value,
                     max_=max_value,
@@ -411,280 +502,305 @@ def plot_province_purchase(data):
             )
         )
         
-        # åˆ›å»ºè¾“å‡ºç›®å½•
+        # ´´½¨Êä³öÄ¿Â¼
         os.makedirs("output", exist_ok=True)
         output_path = os.path.join("output", "province_purchase_map.html")
         china_map.render(output_path)
-        logger.info(f"å„çœä»½è´­ä¹°é‡åœ°å›¾ç»˜åˆ¶å®Œæˆï¼Œå·²ä¿å­˜è‡³: {output_path}")
+        logger.info(f"¸÷Ê¡·İ¹ºÂòÁ¿µØÍ¼»æÖÆÍê³É£¬ÒÑ±£´æÖÁ: {output_path}")
     
     except Exception as e:
-        logger.error(f"ç»˜åˆ¶çœä»½è´­ä¹°åœ°å›¾æ—¶å‘ç”Ÿé”™è¯¯: {str(e)}")
+        logger.error(f"»æÖÆÊ¡·İ¹ºÂòµØÍ¼Ê±·¢Éú´íÎó: {str(e)}")
         logger.error(traceback.format_exc())
 
 
-### 7. æ¯æ—¥ç”¨æˆ·è¡Œä¸ºè¶‹åŠ¿åˆ†æï¼ˆæŠ˜çº¿å›¾ï¼‰
+### 7. Ã¿ÈÕÓÃ»§ĞĞÎªÇ÷ÊÆ·ÖÎö£¨ÕÛÏßÍ¼£©
 def plot_daily_behavior_trend(data):
-    """ä½¿ç”¨matplotlibç»˜åˆ¶æ¯æ—¥å„ç±»è¡Œä¸ºè¶‹åŠ¿"""
+    """Ê¹ÓÃmatplotlib»æÖÆÃ¿ÈÕ¸÷ÀàĞĞÎªÇ÷ÊÆ"""
     try:
         if data is None or data.empty:
-            logger.error("é”™è¯¯: æ— æœ‰æ•ˆæ•°æ®ç”¨äºç»˜åˆ¶æ¯æ—¥è¡Œä¸ºè¶‹åŠ¿å›¾")
+            logger.error("´íÎó: ÎŞÓĞĞ§Êı¾İÓÃÓÚ»æÖÆÃ¿ÈÕĞĞÎªÇ÷ÊÆÍ¼")
             return
         
-        logger.info("æ­£åœ¨åˆ†ææ¯æ—¥ç”¨æˆ·è¡Œä¸ºè¶‹åŠ¿...")
+        logger.info("ÕıÔÚ·ÖÎöÃ¿ÈÕÓÃ»§ĞĞÎªÇ÷ÊÆ...")
         
-        # æ£€æŸ¥å¿…è¦åˆ—æ˜¯å¦å­˜åœ¨
+        # ¼ì²é±ØÒªÁĞÊÇ·ñ´æÔÚ
         required_cols = ['day', 'behavior_type_num', 'uid']
         missing_cols = [col for col in required_cols if col not in data.columns]
         if missing_cols:
-            logger.error(f"é”™è¯¯: æ•°æ®ä¸­ç¼ºå°‘å…³é”®åˆ—: {missing_cols}")
+            logger.error(f"´íÎó: Êı¾İÖĞÈ±ÉÙ¹Ø¼üÁĞ: {missing_cols}")
             return
         
-        # æŒ‰æ—¥æœŸå’Œè¡Œä¸ºç±»å‹åˆ†ç»„ç»Ÿè®¡
+        # °´ÈÕÆÚºÍĞĞÎªÀàĞÍ·Ö×éÍ³¼Æ
         daily_trend = data.groupby(['day', 'behavior_type_num'])['uid'].nunique().reset_index()
         
-        # æ£€æŸ¥æ˜¯å¦æœ‰è¶³å¤Ÿçš„æ•°æ®ç‚¹
+        # ¼ì²éÊÇ·ñÓĞ×ã¹»µÄÊı¾İµã
         if len(daily_trend) < 5:
-            logger.warning(f"è­¦å‘Š: åªæœ‰ {len(daily_trend)} ä¸ªæ•°æ®ç‚¹ï¼Œå¯èƒ½ä¸é€‚åˆè¶‹åŠ¿åˆ†æ")
+            logger.warning(f"¾¯¸æ: Ö»ÓĞ {len(daily_trend)} ¸öÊı¾İµã£¬¿ÉÄÜ²»ÊÊºÏÇ÷ÊÆ·ÖÎö")
         
-        # è½¬æ¢æ•°æ®æ ¼å¼
+        # ×ª»»Êı¾İ¸ñÊ½
         daily_trend_pivot = daily_trend.pivot(index='day', columns='behavior_type_num', values='uid').fillna(0)
         
-        # æ£€æŸ¥æ˜¯å¦æœ‰è¡Œä¸ºç±»å‹æ•°æ®
+        # ¼ì²éÊÇ·ñÓĞĞĞÎªÀàĞÍÊı¾İ
         if daily_trend_pivot.empty:
-            logger.warning("è­¦å‘Š: æ²¡æœ‰è¶³å¤Ÿçš„æ•°æ®åˆ›å»ºè¶‹åŠ¿å›¾")
+            logger.warning("¾¯¸æ: Ã»ÓĞ×ã¹»µÄÊı¾İ´´½¨Ç÷ÊÆÍ¼")
             return
         
         plt.figure(figsize=(14, 7))
         
-        # è·å–æ‰€æœ‰è¡Œä¸ºç±»å‹
+        # »ñÈ¡ËùÓĞĞĞÎªÀàĞÍ
         behavior_types = sorted(daily_trend['behavior_type_num'].unique())
         
-        # ä¸ºæ¯ç§è¡Œä¸ºç±»å‹ç»˜åˆ¶æŠ˜çº¿
+        # ÎªÃ¿ÖÖĞĞÎªÀàĞÍ»æÖÆÕÛÏß
         for behavior in behavior_types:
             if behavior in daily_trend_pivot.columns:
                 plt.plot(daily_trend_pivot.index, daily_trend_pivot[behavior], 
-                         marker='o', label=f'è¡Œä¸ºç±»å‹{behavior}')
+                         marker='o', label=f'ĞĞÎªÀàĞÍ{behavior}')
         
-        plt.title('æ¯æ—¥ç”¨æˆ·è¡Œä¸ºè¶‹åŠ¿')
-        plt.xlabel('æ—¥æœŸ')
-        plt.ylabel('ç”¨æˆ·æ•°é‡ï¼ˆå»é‡uidï¼‰')
-        plt.legend(title='è¡Œä¸ºç±»å‹')
+        plt.title('Ã¿ÈÕÓÃ»§ĞĞÎªÇ÷ÊÆ')
+        plt.xlabel('ÈÕÆÚ')
+        plt.ylabel('ÓÃ»§ÊıÁ¿£¨È¥ÖØuid£©')
+        plt.legend(title='ĞĞÎªÀàĞÍ')
         plt.grid(True, alpha=0.3)
         plt.xticks(rotation=45, ha='right')
         
-        # åˆ›å»ºè¾“å‡ºç›®å½•
+        # ´´½¨Êä³öÄ¿Â¼
         os.makedirs("output", exist_ok=True)
         output_path = os.path.join("output", 'daily_behavior_trend.png')
         plt.savefig(output_path, dpi=300)
         plt.close()
-        logger.info(f"æ¯æ—¥è¡Œä¸ºè¶‹åŠ¿åˆ†æå®Œæˆï¼Œå·²ä¿å­˜è‡³: {output_path}")
+        logger.info(f"Ã¿ÈÕĞĞÎªÇ÷ÊÆ·ÖÎöÍê³É£¬ÒÑ±£´æÖÁ: {output_path}")
     
     except Exception as e:
-        logger.error(f"ç»˜åˆ¶æ¯æ—¥è¡Œä¸ºè¶‹åŠ¿å›¾æ—¶å‘ç”Ÿé”™è¯¯: {str(e)}")
+        logger.error(f"»æÖÆÃ¿ÈÕĞĞÎªÇ÷ÊÆÍ¼Ê±·¢Éú´íÎó: {str(e)}")
         logger.error(traceback.format_exc())
 
 
-### 8. å•†å“åˆ†ç±»ä¸è¡Œä¸ºç±»å‹å…³è”åˆ†æï¼ˆçƒ­åŠ›å›¾ï¼‰
+### 8. ÉÌÆ··ÖÀàÓëĞĞÎªÀàĞÍ¹ØÁª·ÖÎö£¨ÈÈÁ¦Í¼£©
 def plot_category_behavior_correlation(data):
-    """ä½¿ç”¨seabornç»˜åˆ¶å•†å“åˆ†ç±»ä¸è¡Œä¸ºç±»å‹å…³è”çƒ­åŠ›å›¾"""
+    """Ê¹ÓÃseaborn»æÖÆÉÌÆ··ÖÀàÓëĞĞÎªÀàĞÍ¹ØÁªÈÈÁ¦Í¼"""
     try:
         if data is None or data.empty:
-            logger.error("é”™è¯¯: æ— æœ‰æ•ˆæ•°æ®ç”¨äºç»˜åˆ¶å•†å“åˆ†ç±»å…³è”çƒ­åŠ›å›¾")
+            logger.error("´íÎó: ÎŞÓĞĞ§Êı¾İÓÃÓÚ»æÖÆÉÌÆ··ÖÀà¹ØÁªÈÈÁ¦Í¼")
             return
         
-        logger.info("æ­£åœ¨åˆ†æå•†å“åˆ†ç±»ä¸è¡Œä¸ºç±»å‹å…³è”...")
+        logger.info("ÕıÔÚ·ÖÎöÉÌÆ··ÖÀàÓëĞĞÎªÀàĞÍ¹ØÁª...")
         
-        # æ£€æŸ¥å¿…è¦åˆ—æ˜¯å¦å­˜åœ¨
+        # ¼ì²é±ØÒªÁĞÊÇ·ñ´æÔÚ
         required_cols = ['item_category', 'behavior_type_num']
         missing_cols = [col for col in required_cols if col not in data.columns]
         if missing_cols:
-            logger.error(f"é”™è¯¯: æ•°æ®ä¸­ç¼ºå°‘å…³é”®åˆ—: {missing_cols}")
+            logger.error(f"´íÎó: Êı¾İÖĞÈ±ÉÙ¹Ø¼üÁĞ: {missing_cols}")
             return
         
-        # ç»Ÿè®¡æ¯ä¸ªå•†å“åˆ†ç±»ä¸‹å„è¡Œä¸ºç±»å‹çš„æ•°é‡
+        # Í³¼ÆÃ¿¸öÉÌÆ··ÖÀàÏÂ¸÷ĞĞÎªÀàĞÍµÄÊıÁ¿
         category_behavior = data.groupby(['item_category', 'behavior_type_num'])['uid'].count().reset_index()
         
-        # æ£€æŸ¥æ˜¯å¦æœ‰è¶³å¤Ÿçš„æ•°æ®ç‚¹
+        # ¼ì²éÊÇ·ñÓĞ×ã¹»µÄÊı¾İµã
         if len(category_behavior) < 10:
-            logger.warning(f"è­¦å‘Š: åªæœ‰ {len(category_behavior)} ä¸ªæ•°æ®ç‚¹ï¼Œå¯èƒ½ä¸é€‚åˆçƒ­åŠ›å›¾åˆ†æ")
+            logger.warning(f"¾¯¸æ: Ö»ÓĞ {len(category_behavior)} ¸öÊı¾İµã£¬¿ÉÄÜ²»ÊÊºÏÈÈÁ¦Í¼·ÖÎö")
         
-        # è½¬æ¢ä¸ºäº¤å‰è¡¨
+        # ×ª»»Îª½»²æ±í
         category_behavior_pivot = category_behavior.pivot(
             index='item_category', 
             columns='behavior_type_num', 
             values='uid'
         ).fillna(0)
         
-        # æ£€æŸ¥æ˜¯å¦æœ‰è¶³å¤Ÿçš„æ•°æ®
+        # ¼ì²éÊÇ·ñÓĞ×ã¹»µÄÊı¾İ
         if category_behavior_pivot.empty or category_behavior_pivot.shape[0] < 5:
-            logger.warning("è­¦å‘Š: æ²¡æœ‰è¶³å¤Ÿçš„æ•°æ®åˆ›å»ºçƒ­åŠ›å›¾")
+            logger.warning("¾¯¸æ: Ã»ÓĞ×ã¹»µÄÊı¾İ´´½¨ÈÈÁ¦Í¼")
             return
         
-        # é€‰æ‹©è¡Œä¸ºæ•°é‡æœ€å¤šçš„å‰20ä¸ªå•†å“åˆ†ç±»
+        # Ñ¡ÔñĞĞÎªÊıÁ¿×î¶àµÄÇ°20¸öÉÌÆ··ÖÀà
         top_categories = category_behavior_pivot.sum(axis=1).nlargest(20).index
         category_behavior_pivot = category_behavior_pivot.loc[top_categories]
         
         plt.figure(figsize=(15, 10))
         sns.heatmap(category_behavior_pivot, annot=True, fmt='g', cmap='YlGnBu', 
-                   cbar_kws={'label': 'è¡Œä¸ºæ¬¡æ•°'}, annot_kws={'size': 8})
-        plt.title('å•†å“åˆ†ç±»ä¸è¡Œä¸ºç±»å‹å…³è”çƒ­åŠ›å›¾')
-        plt.xlabel('è¡Œä¸ºç±»å‹')
-        plt.ylabel('å•†å“åˆ†ç±»ID')
+                   cbar_kws={'label': 'ĞĞÎª´ÎÊı'}, annot_kws={'size': 8})
+        plt.title('ÉÌÆ··ÖÀàÓëĞĞÎªÀàĞÍ¹ØÁªÈÈÁ¦Í¼')
+        plt.xlabel('ĞĞÎªÀàĞÍ')
+        plt.ylabel('ÉÌÆ··ÖÀàID')
         
-        # åˆ›å»ºè¾“å‡ºç›®å½•
+        # ´´½¨Êä³öÄ¿Â¼
         os.makedirs("output", exist_ok=True)
         output_path = os.path.join("output", 'category_behavior_heatmap.png')
         plt.savefig(output_path, dpi=300)
         plt.close()
-        logger.info(f"å•†å“åˆ†ç±»ä¸è¡Œä¸ºå…³è”åˆ†æå®Œæˆï¼Œå·²ä¿å­˜è‡³: {output_path}")
+        logger.info(f"ÉÌÆ··ÖÀàÓëĞĞÎª¹ØÁª·ÖÎöÍê³É£¬ÒÑ±£´æÖÁ: {output_path}")
     
     except Exception as e:
-        logger.error(f"ç»˜åˆ¶å•†å“åˆ†ç±»å…³è”çƒ­åŠ›å›¾æ—¶å‘ç”Ÿé”™è¯¯: {str(e)}")
+        logger.error(f"»æÖÆÉÌÆ··ÖÀà¹ØÁªÈÈÁ¦Í¼Ê±·¢Éú´íÎó: {str(e)}")
         logger.error(traceback.format_exc())
 
 
-### 9. ç”¨æˆ·ç•™å­˜åˆ†æ
+### 9. ÓÃ»§Áô´æ·ÖÎö
 def plot_user_retention(data):
-    """åˆ†æç”¨æˆ·ç•™å­˜æƒ…å†µå¹¶å¯è§†åŒ–"""
+    """·ÖÎöÓÃ»§Áô´æÇé¿ö²¢¿ÉÊÓ»¯"""
     try:
         if data is None or data.empty:
-            logger.error("é”™è¯¯: æ— æœ‰æ•ˆæ•°æ®ç”¨äºç”¨æˆ·ç•™å­˜åˆ†æ")
+            logger.error("´íÎó: ÎŞÓĞĞ§Êı¾İÓÃÓÚÓÃ»§Áô´æ·ÖÎö")
             return
         
-        logger.info("æ­£åœ¨è¿›è¡Œç”¨æˆ·ç•™å­˜åˆ†æ...")
+        logger.info("ÕıÔÚ½øĞĞÓÃ»§Áô´æ·ÖÎö...")
         
-        # æ£€æŸ¥å¿…è¦åˆ—æ˜¯å¦å­˜åœ¨
+        # ¼ì²é±ØÒªÁĞÊÇ·ñ´æÔÚ
         required_cols = ['uid', 'visit_date']
         missing_cols = [col for col in required_cols if col not in data.columns]
         if missing_cols:
-            logger.error(f"é”™è¯¯: æ•°æ®ä¸­ç¼ºå°‘å…³é”®åˆ—: {missing_cols}")
+            logger.error(f"´íÎó: Êı¾İÖĞÈ±ÉÙ¹Ø¼üÁĞ: {missing_cols}")
             return
         
-        # åˆ›å»ºæ•°æ®å‰¯æœ¬ä»¥é¿å…ä¿®æ”¹åŸå§‹æ•°æ®
+        # ´´½¨Êı¾İ¸±±¾ÒÔ±ÜÃâĞŞ¸ÄÔ­Ê¼Êı¾İ
         retention_data = data[['uid', 'visit_date']].copy()
         
-        # è½¬æ¢æ—¥æœŸæ ¼å¼
+        # ×ª»»ÈÕÆÚ¸ñÊ½
         try:
             retention_data['visit_date'] = pd.to_datetime(retention_data['visit_date'])
         except Exception as e:
-            logger.error(f"æ—¥æœŸè½¬æ¢é”™è¯¯: {str(e)}")
+            logger.error(f"ÈÕÆÚ×ª»»´íÎó: {str(e)}")
             return
         
-        # è®¡ç®—ç”¨æˆ·é¦–æ¬¡è®¿é—®æ—¥æœŸ
+        # ¼ÆËãÓÃ»§Ê×´Î·ÃÎÊÈÕÆÚ
         first_visit = retention_data.groupby('uid')['visit_date'].min().reset_index()
         first_visit.columns = ['uid', 'first_visit']
         
-        # åˆå¹¶é¦–æ¬¡è®¿é—®æ—¥æœŸ
+        # ºÏ²¢Ê×´Î·ÃÎÊÈÕÆÚ
         retention_data = pd.merge(retention_data, first_visit, on='uid')
         
-        # è®¡ç®—æ—¶é—´å·®
+        # ¼ÆËãÊ±¼ä²î
         retention_data['date_diff'] = (retention_data['visit_date'] - retention_data['first_visit']).dt.days
         
-        # ç­›é€‰30å¤©å†…æ•°æ®
+        # É¸Ñ¡30ÌìÄÚÊı¾İ
         retention_data = retention_data[retention_data['date_diff'] <= 30]
         
-        # æ£€æŸ¥æ˜¯å¦æœ‰è¶³å¤Ÿç”¨æˆ·
+        # ¼ì²éÊÇ·ñÓĞ×ã¹»ÓÃ»§
         unique_users = retention_data['uid'].nunique()
         if unique_users < 100:
-            logger.warning(f"è­¦å‘Š: åªæœ‰ {unique_users} ä¸ªç”¨æˆ·ï¼Œç•™å­˜åˆ†æå¯èƒ½ä¸å‡†ç¡®")
+            logger.warning(f"¾¯¸æ: Ö»ÓĞ {unique_users} ¸öÓÃ»§£¬Áô´æ·ÖÎö¿ÉÄÜ²»×¼È·")
         
-        # è®¡ç®—ç•™å­˜ç‡
+        # ¼ÆËãÁô´æÂÊ
         retention_rates = retention_data.groupby('date_diff')['uid'].nunique() / unique_users * 100
         
-        # æ£€æŸ¥æ˜¯å¦æœ‰è¶³å¤Ÿçš„æ•°æ®ç‚¹
+        # ¼ì²éÊÇ·ñÓĞ×ã¹»µÄÊı¾İµã
         if retention_rates.empty:
-            logger.warning("è­¦å‘Š: æ²¡æœ‰è¶³å¤Ÿæ•°æ®è®¡ç®—ç•™å­˜ç‡")
+            logger.warning("¾¯¸æ: Ã»ÓĞ×ã¹»Êı¾İ¼ÆËãÁô´æÂÊ")
             return
         
         plt.figure(figsize=(12, 6))
         plt.plot(retention_rates.index, retention_rates.values, marker='o', color='red')
         plt.axhline(y=50, color='gray', linestyle='--', alpha=0.5)
-        plt.title('ç”¨æˆ·30å¤©ç•™å­˜ç‡')
-        plt.xlabel('é¦–æ¬¡è®¿é—®åçš„å¤©æ•°')
-        plt.ylabel('ç•™å­˜ç‡ (%)')
+        plt.title('ÓÃ»§30ÌìÁô´æÂÊ')
+        plt.xlabel('Ê×´Î·ÃÎÊºóµÄÌìÊı')
+        plt.ylabel('Áô´æÂÊ (%)')
         plt.grid(True, alpha=0.3)
-        plt.ylim(0, 105)  # ç¡®ä¿ç™¾åˆ†æ¯”æ˜¾ç¤ºå®Œæ•´
+        plt.ylim(0, 105)  # È·±£°Ù·Ö±ÈÏÔÊ¾ÍêÕû
         
-        # æ ‡è®°å…³é”®å¤©æ•°çš„ç•™å­˜ç‡
+        # ±ê¼Ç¹Ø¼üÌìÊıµÄÁô´æÂÊ
         key_days = [0, 1, 3, 7, 14, 30]
         for day in key_days:
             if day in retention_rates.index:
                 plt.text(day, retention_rates[day] + 2, f'{retention_rates[day]:.1f}%', ha='center')
         
-        # åˆ›å»ºè¾“å‡ºç›®å½•
+        # ´´½¨Êä³öÄ¿Â¼
         os.makedirs("output", exist_ok=True)
         output_path = os.path.join("output", 'user_retention.png')
         plt.savefig(output_path, dpi=300)
         plt.close()
-        logger.info(f"ç”¨æˆ·ç•™å­˜åˆ†æå®Œæˆï¼Œå·²ä¿å­˜è‡³: {output_path}")
+        logger.info(f"ÓÃ»§Áô´æ·ÖÎöÍê³É£¬ÒÑ±£´æÖÁ: {output_path}")
     
     except Exception as e:
-        logger.error(f"ç”¨æˆ·ç•™å­˜åˆ†æè¿‡ç¨‹ä¸­å‘ç”Ÿé”™è¯¯: {str(e)}")
+        logger.error(f"ÓÃ»§Áô´æ·ÖÎö¹ı³ÌÖĞ·¢Éú´íÎó: {str(e)}")
         logger.error(traceback.format_exc())
 
-
-### 10. ä¸»å‡½æ•°ï¼šæ•´åˆæ‰€æœ‰ä»»åŠ¡
+### 10. Ö÷º¯Êı£ºÕûºÏËùÓĞÈÎÎñ (Ìí¼Ó´óÊı¾İ¼¯ÓÅ»¯)
 def main():
-    logger.info("="*50)
-    logger.info("ç”¨æˆ·è¡Œä¸ºæ•°æ®åˆ†æç¨‹åºå¯åŠ¨")
-    logger.info("="*50)
+    parser = argparse.ArgumentParser(description='ÓÃ»§ĞĞÎªÊı¾İ·ÖÎö')
+    parser.add_argument('--aggregate', action='store_true', help='Ê¹ÓÃÔ¤¾ÛºÏ²éÑ¯ÓÅ»¯´óÊı¾İ¼¯')
+    parser.add_argument('--chunk-size', type=int, default=100000, help='·Ö¿é¶ÁÈ¡´óĞ¡(Ä¬ÈÏ100,000)')
+    args = parser.parse_args()
+    
+    logger.info("="*70)
+    logger.info(f"{'ÓÃ»§ĞĞÎªÊı¾İ·ÖÎö³ÌĞòÆô¶¯':^70}")
+    logger.info(f"{'ÅäÖÃ: ':<20} Ô¤¾ÛºÏ={args.aggregate}, ·Ö¿é´óĞ¡={args.chunk_size}")
+    logger.info("="*70)
     
     try:
-        # 1. è·å–æ•°æ®
-        logger.info(">>> æ­¥éª¤1: ä»æ•°æ®åº“è·å–æ•°æ®")
-        data = get_data_from_mysql()
+        # 1. »ñÈ¡Êı¾İ
+        logger.info(">>> ²½Öè1: ´ÓÊı¾İ¿â»ñÈ¡Êı¾İ")
+        data = get_data_from_mysql(
+            use_aggregated_query=args.aggregate, 
+            chunk_size=args.chunk_size
+        )
         if data is None or data.empty:
-            logger.error("æ•°æ®è·å–å¤±è´¥ï¼Œç¨‹åºé€€å‡º")
+            logger.error("Êı¾İ»ñÈ¡Ê§°Ü£¬³ÌĞòÍË³ö")
             return
         
-        # 2. é¢„å¤„ç†æ•°æ®
-        logger.info(">>> æ­¥éª¤2: æ•°æ®é¢„å¤„ç†")
+        # 2. Ô¤´¦ÀíÊı¾İ
+        logger.info(">>> ²½Öè2: Êı¾İÔ¤´¦Àí")
         processed_data = preprocess_data(data)
         if processed_data is None or processed_data.empty:
-            logger.error("æ•°æ®é¢„å¤„ç†å¤±è´¥ï¼Œç¨‹åºé€€å‡º")
+            logger.error("Êı¾İÔ¤´¦ÀíÊ§°Ü£¬³ÌĞòÍË³ö")
             return
         
-        # 3. æ‰§è¡Œå„é¡¹å¯è§†åŒ–ä»»åŠ¡
-        logger.info(">>> æ­¥éª¤3: å¼€å§‹æ•°æ®åˆ†æä¸å¯è§†åŒ–")
+        # 3. Ö´ĞĞ¸÷Ïî¿ÉÊÓ»¯ÈÎÎñ (¸ù¾İÊı¾İ¹æÄ£µ÷Õû)
+        logger.info(">>> ²½Öè3: ¿ªÊ¼Êı¾İ·ÖÎöÓë¿ÉÊÓ»¯")
         
-        # åˆ›å»ºä»»åŠ¡åˆ—è¡¨
+        # ´´½¨ÈÎÎñÁĞ±í
         analysis_tasks = [
-            ("è¡Œä¸ºç±»å‹åˆ†å¸ƒ", plot_behavior_distribution),
-            ("å•†å“åˆ†ç±»åˆ†æ", plot_top_purchased_categories),
-            ("æœˆåº¦è¡Œä¸ºåˆ†æ", plot_monthly_behavior),
-            ("çœä»½è´­ä¹°åˆ†æ", plot_province_purchase),
-            ("æ¯æ—¥è¡Œä¸ºè¶‹åŠ¿", plot_daily_behavior_trend),
-            ("å•†å“è¡Œä¸ºå…³è”", plot_category_behavior_correlation),
-            ("ç”¨æˆ·ç•™å­˜åˆ†æ", plot_user_retention)
+            ("ĞĞÎªÀàĞÍ·Ö²¼", plot_behavior_distribution),
+            ("ÉÌÆ··ÖÀà·ÖÎö", plot_top_purchased_categories),
+            ("ÔÂ¶ÈĞĞÎª·ÖÎö", plot_monthly_behavior),
+            ("Ê¡·İ¹ºÂò·ÖÎö", plot_province_purchase),
+            ("Ã¿ÈÕĞĞÎªÇ÷ÊÆ", plot_daily_behavior_trend),
+            ("ÉÌÆ·ĞĞÎª¹ØÁª", plot_category_behavior_correlation),
+            ("ÓÃ»§Áô´æ·ÖÎö", plot_user_retention)
         ]
         
-        # æ‰§è¡Œæ‰€æœ‰ä»»åŠ¡
+        # ´óÊı¾İ¼¯Ìø¹ı¸ß³É±¾ÈÎÎñ
+        if len(processed_data) > 5000000:  # 500ÍòÌõÒÔÉÏ
+            logger.warning("¼ì²âµ½´óÊı¾İ¼¯£¬Ìø¹ı¸ß³É±¾·ÖÎöÈÎÎñ")
+            skip_tasks = ["ÉÌÆ·ĞĞÎª¹ØÁª", "ÓÃ»§Áô´æ·ÖÎö"]
+            analysis_tasks = [t for t in analysis_tasks if t[0] not in skip_tasks]
+            logger.info(f"½«Ö´ĞĞµÄÈÎÎñ: {[t[0] for t in analysis_tasks]}")
+        
+        # Ö´ĞĞËùÓĞÈÎÎñ
         for task_name, task_func in analysis_tasks:
             try:
-                logger.info(f"æ­£åœ¨æ‰§è¡Œä»»åŠ¡: {task_name}")
+                logger.info(f"{'='*30} ¿ªÊ¼ÈÎÎñ: {task_name} {'='*30}")
+                start_time = time.time()
+                
                 task_func(processed_data)
+                
+                elapsed = time.time() - start_time
+                logger.info(f"{'='*30} ÈÎÎñÍê³É: {task_name} [ºÄÊ±: {elapsed:.2f}Ãë] {'='*30}")
             except Exception as e:
-                logger.error(f"ä»»åŠ¡ '{task_name}' æ‰§è¡Œå¤±è´¥: {str(e)}")
+                logger.error(f"ÈÎÎñ '{task_name}' Ö´ĞĞÊ§°Ü: {str(e)}")
                 logger.error(traceback.format_exc())
-                logger.info(f"è·³è¿‡ä»»åŠ¡ '{task_name}'ï¼Œç»§ç»­æ‰§è¡Œåç»­ä»»åŠ¡")
+                logger.info(f"Ìø¹ıÈÎÎñ '{task_name}'£¬¼ÌĞøÖ´ĞĞºóĞøÈÎÎñ")
         
-        logger.info("="*50)
-        logger.info("æ‰€æœ‰æ•°æ®åˆ†æä»»åŠ¡å®Œæˆ")
-        logger.info("="*50)
+        logger.info("="*70)
+        logger.info(f"{'ËùÓĞÊı¾İ·ÖÎöÈÎÎñÍê³É':^70}")
+        logger.info("="*70)
     
     except KeyboardInterrupt:
-        logger.warning("ç¨‹åºè¢«ç”¨æˆ·ä¸­æ–­")
+        logger.warning("³ÌĞò±»ÓÃ»§ÖĞ¶Ï")
     
     except Exception as e:
-        logger.error(f"ä¸»ç¨‹åºå‘ç”Ÿæœªæ•è·çš„å¼‚å¸¸: {str(e)}")
+        logger.error(f"Ö÷³ÌĞò·¢ÉúÎ´²¶»ñµÄÒì³£: {str(e)}")
         logger.error(traceback.format_exc())
-        logger.error("ç¨‹åºå¼‚å¸¸ç»ˆæ­¢")
+        logger.error("³ÌĞòÒì³£ÖÕÖ¹")
     
     finally:
-        # ç¨‹åºç»“æŸå‰çš„æ¸…ç†å·¥ä½œ
-        plt.close('all')  # å…³é—­æ‰€æœ‰matplotlibå›¾å½¢
-        logger.info("ç¨‹åºæ‰§è¡Œç»“æŸ")
+        # ³ÌĞò½áÊøÇ°µÄÇåÀí¹¤×÷
+        plt.close('all')  # ¹Ø±ÕËùÓĞmatplotlibÍ¼ĞÎ
+        logger.info("³ÌĞòÖ´ĞĞ½áÊø")
 
 
 if __name__ == "__main__":
+    # Ìí¼ÓÏµÍ³×ÊÔ´¼à¿Ø
+    logger.info(f"ÏµÍ³ÄÚ´æ×ÜÁ¿: {psutil.virtual_memory().total / (1024 ** 3):.2f} GB")
+    logger.info(f"CPUºËĞÄÊı: {psutil.cpu_count()}")
+    logger.info(f"Python°æ±¾: {sys.version}")
+    
     main()
