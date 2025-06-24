@@ -12,6 +12,8 @@ def execute_git_command(command, directory="."):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding='utf-8',  # 明确指定UTF-8编码
+            errors='replace',  # 替换无法解码的字符
             check=True
         )
         return result.stdout
@@ -32,6 +34,8 @@ def main():
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             check=True
         )
     except subprocess.CalledProcessError:
