@@ -84,11 +84,14 @@ try:
             selected_font = font
             break
         # 检查字体文件是否存在（更可靠的方法）
-        font_files = mpl.font_manager.findfont(font, fallback_to_default=False)
-        if font_files and font_files != mpl.font_manager.get_default_font():
-            selected_font = font
-            break
-    
+        try:
+            font_files = mpl.font_manager.findfont(font, fallback_to_default=False)
+            if font_files and font_files != mpl.font_manager.get_default_font():
+                selected_font = font
+                break
+        except ValueError:
+            continue  # 如果字体不存在，继续检查下一个
+
     if selected_font:
         # 设置全局字体（对Matplotlib有效）
         plt.rcParams['font.family'] = selected_font
@@ -447,7 +450,7 @@ def plot_monthly_behavior(data):
             col_wrap=min(3, len(valid_months)))  # 每行最多3个子图
         
         # 设置总标题和坐标轴标签
-        g.suptitle('Monthly Consumer Behavior Distribution', y=1.05)
+        g.fig.suptitle('Monthly Consumer Behavior Distribution', y=1.05)
         g.set_axis_labels("Behavior Type (1=Browse, 4=Purchase)", "Frequency")
         
         # 调整子图布局
