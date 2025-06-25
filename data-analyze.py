@@ -60,35 +60,59 @@ logger = setup_logging()
 
 # 确保中文正常显示 (Ubuntu 18.04兼容)
 try:
-    # 尝试多种中文字体方案
-    font_options = [
+    # 优先选择中文字体
+    chinese_fonts = [
         "SimHei", 
-        "WenQuanYi Micro Hei", 
-        "DejaVu Sans", 
-        "Droid Sans Fallback",
+        "Microsoft YaHei",
+        "WenQuanYi Micro Hei",
+        "WenQuanYi Zen Hei",
         "Noto Sans CJK SC",
+        "Source Han Sans SC",
+        "Droid Sans Fallback",
         "sans-serif"
     ]
     
-    # 检查可用字体
-    available_fonts = [f.name for f in mpl.font_manager.fontManager.ttflist]
-    logger.info(f"可用字体: {', '.join(available_fonts[:5])}...")
+    # 获取系统可用字体
+    available_fonts = [f.name.lower() for f in mpl.font_manager.fontManager.ttflist]
+    logger.info(f"可用字体数量: {len(available_fonts)}")
     
-    # 设置首选字体
-    for font in font_options:
-        if any(f.lower() == font.lower() for f in available_fonts):
-            plt.rcParams["font.family"] = font
-            logger.info(f"使用字体: {font}")
+    # 找到第一个可用的中文字体
+    selected_font = None
+    for font in chinese_fonts:
+        # 检查字体名称或别名
+        if font.lower() in available_fonts:
+            selected_font = font
             break
+        # 检查字体文件是否存在（更可靠的方法）
+        font_files = mpl.font_manager.findfont(font, fallback_to_default=False)
+        if font_files and font_files != mpl.font_manager.get_default_font():
+            selected_font = font
+            break
+    
+    if selected_font:
+        # 设置全局字体（对Matplotlib有效）
+        plt.rcParams['font.family'] = selected_font
+        # 设置Seaborn字体（需要单独设置）
+        sns.set(font=selected_font)
+        # 设置pyecharts全局选项
+        from pyecharts.globals import CurrentConfig
+        CurrentConfig.GLOBAL_FONT = selected_font
+        
+        logger.info(f"成功设置中文字体: {selected_font}")
     else:
         logger.warning("未找到合适的中文字体，尝试使用默认字体")
-        plt.rcParams["font.family"] = "sans-serif"
+        # 强制设置回退方案
+        plt.rcParams['font.family'] = ['sans-serif']
+        plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial Unicode MS', 'sans-serif']
     
-    plt.rcParams["axes.unicode_minus"] = False
-    logger.info("成功配置中文字体")
+    plt.rcParams['axes.unicode_minus'] = False
+    logger.info("中文显示配置完成")
+    
+    # 清除字体缓存（重要！）
+    mpl.font_manager._rebuild()
 except Exception as e:
-    logger.error(f"中文字体配置失败: {str(e)}")
-    logger.warning("图表可能无法正常显示中文")
+    logger.error(f"字体配置错误: {str(e)}")
+    logger.error(traceback.format_exc())
 
 
 ### 1. 连接MySQL数据库并获取数据 (支持分块读取)
@@ -99,16 +123,31 @@ def get_data_from_mysql(use_aggregated_query=False, chunk_size=100000):
     # 记录内存使用情况
     start_mem = psutil.virtual_memory().used / (1024 ** 2)  # MB
     
+    conn = None
+    max_retries = 3
+    retry_delay = 5  # 秒
+    
     try:
-        conn = pymysql.connect(
-            host='127.0.0.1',
-            port=3306,
-            user='root',
-            password='root',
-            database='dblab',
-            connect_timeout=30,  # 增加超时时间
-            charset='utf8mb4'
-        )
+        for attempt in range(max_retries):
+            try:
+                conn = pymysql.connect(
+                    host='127.0.0.1',
+                    port=3306,
+                    user='root',
+                    password='root',
+                    database='dblab',
+                    connect_timeout=30,
+                    charset='utf8mb4',
+                    cursorclass=pymysql.cursors.DictCursor
+                )
+                logger.info("数据库连接成功")
+                break
+            except pymysql.OperationalError as oe:
+                if attempt < max_retries - 1:
+                    logger.warning(f"数据库连接失败({str(oe)})，{retry_delay}秒后重试... (尝试 {attempt+1}/{max_retries})")
+                    time.sleep(retry_delay)
+                else:
+                    raise Exception(f"数据库连接失败: {str(oe)}")
         
         # 检查表是否存在
         with conn.cursor() as cursor:
@@ -120,7 +159,7 @@ def get_data_from_mysql(use_aggregated_query=False, chunk_size=100000):
         # 根据数据集大小选择查询方式
         with conn.cursor() as cursor:
             cursor.execute("SELECT COUNT(*) FROM user_action")
-            total_rows = cursor.fetchone()[0]
+            total_rows = cursor.fetchone()['COUNT(*)']
             logger.info(f"数据表总行数: {total_rows:,}")
             
             # 大数据集使用预聚合查询
@@ -177,7 +216,7 @@ def get_data_from_mysql(use_aggregated_query=False, chunk_size=100000):
         return None
     
     finally:
-        if 'conn' in locals() and conn:
+        if conn:
             conn.close()
             logger.info("数据库连接已关闭")
 
@@ -286,9 +325,9 @@ def plot_behavior_distribution(data):
         
         plt.figure(figsize=(10, 6))
         sns.histplot(data['behavior_type_num'], kde=False, bins=4, color='lightblue')
-        plt.title('消费者行为类型分布')
-        plt.xlabel('行为类型（1=浏览，4=购买）')
-        plt.ylabel('频数')
+        plt.title('Consumer Behavior Type Distribution')
+        plt.xlabel('Behavior Type (1=Browse, 4=Purchase)')
+        plt.ylabel('Frequency')
         plt.xticks([1, 2, 3, 4])
         plt.grid(True, alpha=0.3)
         
@@ -351,9 +390,9 @@ def plot_top_purchased_categories(data):
         
         plt.figure(figsize=(12, 7))
         ax = sns.barplot(x=category_count.index, y=category_count.values, color='green')
-        plt.title('购买量前十的商品分类')
-        plt.xlabel('商品分类ID')
-        plt.ylabel('购买次数')
+        plt.title('Top 10 Purchased Categories')
+        plt.xlabel('product category')
+        plt.ylabel('purchase count')
         plt.xticks(rotation=45, ha='right')
         plt.grid(True, alpha=0.3)
         
@@ -373,9 +412,9 @@ def plot_top_purchased_categories(data):
         logger.error(traceback.format_exc())
 
 
-### 5. 按月分析购买行为（分面直方图）
+### 5. 按月分析购买行为（分面直方图）- 修复版
 def plot_monthly_behavior(data):
-    """使用seaborn分面直方图分析各月行为分布"""
+    """使用seaborn分面直方图分析各月行为分布（修复版）"""
     try:
         if data is None or data.empty:
             logger.error("错误: 无有效数据用于绘制月度行为分布图")
@@ -395,23 +434,29 @@ def plot_monthly_behavior(data):
         if len(valid_months) < 2:
             logger.warning(f"警告: 只有 {len(valid_months)} 个月份的数据，可能不适合分面分析")
         
-        plt.figure(figsize=(14, 8))
-        grid = sns.histplot(
+        # 使用displot代替histplot（支持分面参数）
+        g = sns.displot(
             data=data,
             x='behavior_type_num',
             col='month',
             bins=4,
             kde=False,
             color='lightgreen',
-            col_wrap=min(3, len(valid_months))) # 自适应列数
+            height=5,  # 每个子图的高度
+            aspect=1.2,  # 子图宽高比
+            col_wrap=min(3, len(valid_months)))  # 每行最多3个子图
         
-        plt.suptitle('各月份消费者行为分布', y=0.95, fontsize=14)
+        # 设置总标题和坐标轴标签
+        g.suptitle('Monthly Consumer Behavior Distribution', y=1.05)
+        g.set_axis_labels("Behavior Type (1=Browse, 4=Purchase)", "Frequency")
+        
+        # 调整子图布局
         plt.tight_layout()
         
         # 创建输出目录
         os.makedirs("output", exist_ok=True)
         output_path = os.path.join("output", 'monthly_behavior.png')
-        plt.savefig(output_path, dpi=300)
+        g.savefig(output_path, dpi=300)
         plt.close()
         logger.info(f"各月份消费者行为分布分面直方图绘制完成，已保存至: {output_path}")
     
@@ -424,6 +469,15 @@ def plot_monthly_behavior(data):
 def plot_province_purchase(data):
     """使用pyecharts绘制各省份购买量地图"""
     try:
+        # 注册地图资源（解决空白地图问题）
+        try:
+            from pyecharts.datasets import register_url
+            # 尝试使用在线地图
+            register_url("https://echarts-maps.github.io/echarts-china-counties-js/")
+            logger.info("成功加载在线地图资源")
+        except Exception as e:
+            logger.warning(f"无法加载在线地图资源: {str(e)}，使用内置地图")
+        
         if data is None or data.empty:
             logger.error("错误: 无有效数据用于绘制省份购买地图")
             return
@@ -554,12 +608,12 @@ def plot_daily_behavior_trend(data):
         for behavior in behavior_types:
             if behavior in daily_trend_pivot.columns:
                 plt.plot(daily_trend_pivot.index, daily_trend_pivot[behavior], 
-                         marker='o', label=f'行为类型{behavior}')
+                         marker='o', label=f'Behavior {behavior}')
         
-        plt.title('每日用户行为趋势')
-        plt.xlabel('日期')
-        plt.ylabel('用户数量（去重uid）')
-        plt.legend(title='行为类型')
+        plt.title('Daily User Behavior Trend')
+        plt.xlabel('Date')
+        plt.ylabel('User Count (Distinct Uid)')
+        plt.legend(title='Behavior Type')
         plt.grid(True, alpha=0.3)
         plt.xticks(rotation=45, ha='right')
         
@@ -618,9 +672,9 @@ def plot_category_behavior_correlation(data):
         plt.figure(figsize=(15, 10))
         sns.heatmap(category_behavior_pivot, annot=True, fmt='g', cmap='YlGnBu', 
                    cbar_kws={'label': '行为次数'}, annot_kws={'size': 8})
-        plt.title('商品分类与行为类型关联热力图')
-        plt.xlabel('行为类型')
-        plt.ylabel('商品分类ID')
+        plt.title('Category and Behavior Type Correlation Heatmap')
+        plt.xlabel('behavior type (1=Browse, 4=Purchase)')
+        plt.ylabel('category id')
         
         # 创建输出目录
         os.makedirs("output", exist_ok=True)
@@ -690,9 +744,9 @@ def plot_user_retention(data):
         plt.figure(figsize=(12, 6))
         plt.plot(retention_rates.index, retention_rates.values, marker='o', color='red')
         plt.axhline(y=50, color='gray', linestyle='--', alpha=0.5)
-        plt.title('用户30天留存率')
-        plt.xlabel('首次访问后的天数')
-        plt.ylabel('留存率 (%)')
+        plt.title('User Retention Rate Over 30 Days')
+        plt.xlabel('Days Since First Visit')
+        plt.ylabel('Retention Rate (%)')
         plt.grid(True, alpha=0.3)
         plt.ylim(0, 105)  # 确保百分比显示完整
         
@@ -713,8 +767,21 @@ def plot_user_retention(data):
         logger.error(f"用户留存分析过程中发生错误: {str(e)}")
         logger.error(traceback.format_exc())
 
+
 ### 10. 主函数：整合所有任务 (添加大数据集优化)
 def main():
+    # 首先检查关键依赖
+    logger.info("检查关键依赖...")
+    try:
+        import pymysql, pandas, seaborn, pyecharts
+        logger.info("所有必需依赖已安装")
+    except ImportError as e:
+        missing_module = str(e).split(" ")[-1]
+        logger.error(f"缺少关键依赖: {missing_module}")
+        logger.error("请执行以下命令安装所有依赖:")
+        logger.error("pip install pymysql pandas seaborn pyecharts psutil")
+        return  # 退出程序
+
     parser = argparse.ArgumentParser(description='用户行为数据分析')
     parser.add_argument('--aggregate', action='store_true', help='使用预聚合查询优化大数据集')
     parser.add_argument('--chunk-size', type=int, default=100000, help='分块读取大小(默认100,000)')
