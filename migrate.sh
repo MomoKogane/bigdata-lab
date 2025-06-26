@@ -4,7 +4,7 @@
 HADOOP_DIR="/usr/local/hadoop"
 HIVE_DIR="/usr/local/hive"
 MYSQL_PWD="hive"  # MySQL hive用户密码
-OUTPUT_DIR="/home/hadoop/bigdata-output"  # 改为用户主目录下的路径
+OUTPUT_DIR="usr/local/output/bigdata-user-table"  # 改为用户主目录下的路径
 HBASE_TMP_DIR="/user/hbase/bigdata_tmp"
 HDFS_INPUT_DIR="/user/hbase/bigdata_input"
 HDFS_OUTPUT_DIR="/user/hbase/bigdata_output_hfile"
@@ -69,7 +69,7 @@ INSERT OVERWRITE TABLE raw_user_action SELECT * FROM raw_user;
 
 -- 导出数据到本地（用户主目录路径）
 SET mapred.reduce.tasks=1;
-INSERT OVERWRITE LOCAL DIRECTORY '${OUTPUT_DIR}/bigdata-user-table'
+INSERT OVERWRITE LOCAL DIRECTORY '${OUTPUT_DIR}'
 ROW FORMAT DELIMITED 
 FIELDS TERMINATED BY ','  
 SELECT * FROM dblab.raw_user_action;
@@ -77,7 +77,7 @@ SELECT * FROM dblab.raw_user_action;
 
 # 验证导出结果
 echo "--- 查看导出数据前10行 ---"
-head ${OUTPUT_DIR}/bigdata-user-table/000000_0
+head ${OUTPUT_DIR}/000000_0
 
 
 # 3. 导入数据到MySQL（明确密码参数）
@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS raw_user_action (
 TRUNCATE TABLE raw_user_action;
 
 -- 导入数据（用户主目录路径）
-LOAD DATA LOCAL INFILE '${OUTPUT_DIR}/bigdata-user-table/000000_0'
+LOAD DATA LOCAL INFILE '${OUTPUT_DIR}/000000_0'
 INTO TABLE raw_user_action
 CHARACTER SET utf8
 FIELDS TERMINATED BY ','
