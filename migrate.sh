@@ -182,6 +182,27 @@ SELECT MIN(visit_date) AS min_date, MAX(visit_date) AS max_date FROM raw_user_ac
 # ===== 4. 导入数据到HBase =====
 echo "===== 数据导入HBase ====="
 
+LOCAL_TMP_DIR="/tmp/hbase_tmp"
+mkdir -p ${LOCAL_TMP_DIR}
+chmod 777 ${LOCAL_TMP_DIR}
+
+# 确保HDFS目录存在并设置全开放权限
+echo "--- 设置HDFS目录权限 ---"
+hdfs dfs -mkdir -p ${HDFS_INPUT_DIR}
+hdfs dfs -mkdir -p ${HDFS_OUTPUT_DIR}
+hdfs dfs -mkdir -p ${HBASE_TMP_DIR}
+
+# 设置777权限
+hdfs dfs -chmod -R 777 ${HDFS_INPUT_DIR}
+hdfs dfs -chmod -R 777 ${HDFS_OUTPUT_DIR}
+hdfs dfs -chmod -R 777 ${HBASE_TMP_DIR}
+
+# 同时设置HDFS主目录权限
+hdfs dfs -mkdir -p /user/hadoop
+hdfs dfs -chmod 777 /user/hadoop
+hdfs dfs -mkdir -p /user/hbase
+hdfs dfs -chmod 777 /user/hbase
+
 # 从MySQL导出数据到本地（分块处理）
 echo "--- 从MySQL分块导出数据 ---"
 total_rows=$(mysql -u hive --password=${MYSQL_PWD} -sN -e "USE dblab; SELECT COUNT(*) FROM raw_user_action;")
@@ -200,7 +221,6 @@ done
 
 # 上传到HDFS
 echo "--- 上传数据到HDFS ---"
-hdfs dfs -mkdir -p ${HDFS_INPUT_DIR}
 hdfs dfs -put ${OUTPUT_DIR}/raw_user_action_*.tsv ${HDFS_INPUT_DIR}/
 
 # 在HBase中创建表（带预分区）
@@ -210,36 +230,45 @@ disable 'raw_user_action'
 drop 'raw_user_action'
 create 'raw_user_action', 
   {NAME => 'f1', VERSIONS => 5}, 
-  {SPLITS => ['1000000', '3000000', '5000000', '7000000', '9000000']}  # 预分区
+  {SPLITS => ['1000000', '3000000', '5000000', '7000000', '9000000']}
 EOF
-
-# 创建HBase临时目录
-echo "--- 创建HBase临时目录 ---"
-hdfs dfs -mkdir -p ${HBASE_TMP_DIR}
-hdfs dfs -chown hadoop:hadoop ${HBASE_TMP_DIR}
 
 # 分批生成HFile
 echo "--- 分批生成HFile ---"
+HDFS_URI=$(hdfs getconf -confKey fs.defaultFS)
 for file in $(hdfs dfs -ls ${HDFS_INPUT_DIR} | grep tsv | awk '{print $NF}'); do
     echo "处理文件: $file"
     
     ${HBASE_HOME}/bin/hbase org.apache.hadoop.hbase.mapreduce.ImportTsv \
+      -Dhbase.fs.tmp.dir=file://${LOCAL_TMP_DIR} \
+      -Dhbase.rootdir=${HDFS_URI}${HBASE_TMP_DIR} \
       -Dimporttsv.rowkey.position=0 \
       -Dimporttsv.separator=9 \
       -Dimporttsv.columns="HBASE_ROW_KEY,f1:uid,f1:item_id,f1:behavior_type,f1:item_category,f1:visit_date,f1:province" \
-      -Dimporttsv.bulk.output=hdfs://$(hdfs getconf -confKey fs.defaultFS)${HDFS_OUTPUT_DIR}/$(basename ${file})_hfiles \
+      -Dimporttsv.bulk.output=${HDFS_URI}${HDFS_OUTPUT_DIR}/$(basename ${file})_hfiles \
       raw_user_action \
-      ${file}
+      ${HDFS_URI}${file}
+    
+    if [ $? -ne 0 ]; then
+        echo "!!! 生成HFile失败: $file"
+        exit 1
+    fi
 done
 
-# 分批加载HFile
+# 分批加载HFile (修复路径格式)
 echo "--- 分批加载HFile到HBase ---"
 for hfile_dir in $(hdfs dfs -ls ${HDFS_OUTPUT_DIR} | grep hfiles | awk '{print $NF}'); do
     echo "加载HFile: $hfile_dir"
     
+    # 使用完整HDFS URI路径
     ${HBASE_HOME}/bin/hbase org.apache.hadoop.hbase.mapreduce.LoadIncrementalHFiles \
-      ${hfile_dir} \
+      ${HDFS_URI}${hfile_dir} \  # 关键修复：添加HDFS_URI前缀
       raw_user_action
+    
+    if [ $? -ne 0 ]; then
+        echo "!!! 加载HFile失败: $hfile_dir"
+        exit 1
+    fi
 done
 
 # 最终验证
