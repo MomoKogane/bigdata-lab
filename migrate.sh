@@ -28,10 +28,18 @@ echo "--- 启动Hadoop服务 ---"
 cd ${HADOOP_DIR}
 ./sbin/start-dfs.sh
 ./sbin/start-yarn.sh
+if [ $? -ne 0 ]; then
+    echo "--- Hadoop服务启动失败，退出脚本 ---"
+    exit 1
+fi
 
 # 启动HBase
 echo "--- 启动HBase服务 ---"
 ${HBASE_HOME}/bin/start-hbase.sh
+if [ $? -ne 0 ]; then
+    echo "--- HBase服务启动失败，退出脚本 ---"
+    exit 1
+fi
 
 
 # 2. Hive数据导出到本地

@@ -9,7 +9,12 @@ HIVE_DIR="/usr/local/hive"
 echo "===== 开始数据预处理 ====="
 cd ${DATASET_DIR}
 echo "--- 执行pre_deal.sh处理raw_user.csv ---"
-bash ./pre_deal.sh raw_user.csv raw_user_table.txt
+if bash ./pre_deal.sh raw_user.csv raw_user_table.txt; then
+    echo "--- pre_deal.sh执行成功 ---"
+else
+    echo "--- pre_deal.sh执行失败，退出预处理脚本 ---"
+    exit 1
+fi
 
 # 验证预处理结果（查看前10行）
 echo "--- 预处理后数据预览 ---"
@@ -22,11 +27,21 @@ cd ${HADOOP_DIR}
 
 # 启动Hadoop
 echo "--- 检查并启动Hadoop ---"
-jps | grep -q NameNode || ./sbin/start-all.sh
+if jps | grep -q NameNode; then
+    echo "--- Hadoop已经在运行 ---"
+else
+    echo "--- 启动Hadoop ---"
+    ./sbin/start-all.sh
+fi
 
 # 上传文件到HDFS
 echo "--- 上传raw_user_table.txt到HDFS ---"
-./bin/hdfs dfs -put ${DATASET_DIR}/raw_user_table.txt /bigdatacase/dataset
+if ./bin/hdfs dfs -put ${DATASET_DIR}/raw_user_table.txt /bigdatacase/dataset; then
+    echo "--- 文件上传成功 ---"
+else
+    echo "--- 文件上传失败，退出预处理脚本 ---"
+    exit 1
+fi
 
 # 查看前15行
 echo "--- HDFS文件内容预览 ---"
@@ -38,12 +53,16 @@ echo "===== 开始Hive操作 ====="
 
 # 启动MySQL
 echo "--- 检查并启动MySQL ---"
-service mysql status || service mysql start
+if service mysql status; then
+    echo "--- MySQL已经在运行 ---"
+else
+    echo "--- 启动MySQL ---"
+    service mysql start
+fi
 
 # 进入Hive执行建表和查询
-cd ${HIVE_DIR}
 echo "--- 在Hive中创建外部表并验证数据 ---"
-./bin/hive -e "
+hive -e "
 USE dblab;
 
 -- 创建外部表

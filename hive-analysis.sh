@@ -76,9 +76,15 @@ start_mysql() {
 # 定义Hive执行命令函数
 execute_hive() {
     echo "===== 执行Hive命令: $1 ====="
-    hive -e "$1"
+    if hive -e "$1"; then
+        echo "--- Hive命令执行成功 ---"
+    else
+        echo "--- Hive命令执行失败，退出预处理脚本 ---"
+        exit 1
+    fi
     echo "--------------------------------------------------"
 }
+
 
 # 主流程
 start_hadoop
