@@ -76,7 +76,8 @@ start_mysql() {
 # 定义Hive执行命令函数
 execute_hive() {
     echo "===== 执行Hive命令: $1 ====="
-    if hive -e "$1"; then
+    echo "===== 使用dblab数据库 ======"
+    if hive -e "USE dblab; $1"; then
         echo "--- Hive命令执行成功 ---"
     else
         echo "--- Hive命令执行失败，退出预处理脚本 ---"

@@ -36,7 +36,7 @@ fi
 
 # 上传文件到HDFS
 echo "--- 上传raw_user_table.txt到HDFS ---"
-if ./bin/hdfs dfs -put ${DATASET_DIR}/raw_user_table.txt /bigdatacase/dataset; then
+if ./bin/hdfs dfs -put -f ${DATASET_DIR}/raw_user_table.txt /bigdatacase/dataset; then
     echo "--- 文件上传成功 ---"
 else
     echo "--- 文件上传失败，退出预处理脚本 ---"
@@ -66,7 +66,7 @@ hive -e "
 USE dblab;
 
 -- 创建外部表
-CREATE EXTERNAL TABLE IF NOT EXISTS raw_user (
+CREATE EXTERNAL TABLE IF NOT EXISTS dblab.raw_user (
     id INT,
     uid STRING,
     item_id STRING,
@@ -77,9 +77,9 @@ CREATE EXTERNAL TABLE IF NOT EXISTS raw_user (
 ) COMMENT '大规模用户行为数据集'
 ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t'
 STORED AS TEXTFILE
-LOCATION '/bigdatacase/dataset';
+LOCATION '/bigdatacase/dataset/raw_user_table.txt';
 
--- 验证数据导入（查询前15行）
+-- 验证数据导入（查询前20行）
 SELECT * FROM raw_user LIMIT 20;
 "
 
